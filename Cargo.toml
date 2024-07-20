@@ -9,5 +9,9 @@ eframe = "0.27.2"
 egui_extras = "0.27.2"
 env_logger = "0.11.3"
 log = "0.4.22"
-rodio = { version = "0.17.3", features = ["symphonia-all"], default-features = false }
 ureq = "2.9.7"
+url2audio = "0.2.2"
+crossbeam = "0.8.4"
+
+[profile.dev]
+opt-level = 1
