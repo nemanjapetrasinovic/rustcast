@@ -1,7 +1,10 @@
 [package]
 name = "rustcast"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
+
+[workspace]
+members = [".", "migrations"]
 
 [dependencies]
 egui = "0.27.2"
@@ -12,6 +15,7 @@ log = "0.4.22"
 ureq = "2.9.7"
 url2audio = "0.2.2"
 crossbeam = "0.8.4"
+sea-orm = { version = "^0.12.0", features = [ "sqlx-sqlite", "runtime-async-std-native-tls", "macros" ] }
 
 [profile.dev]
 opt-level = 1
