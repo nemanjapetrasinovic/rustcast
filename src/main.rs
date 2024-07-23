@@ -82,6 +82,7 @@ struct MyEguiApp {
     rx: Receiver<PlayerState>,
     player_state: PlayerState,
     src_url: String,
+    show_add_stram: bool
 }
 
 impl MyEguiApp {
@@ -100,6 +101,7 @@ impl MyEguiApp {
             rx,
             player_state: PlayerState::Paused,
             src_url: String::new(),
+            show_add_stram: false,
         }
     }
 }
@@ -115,6 +117,9 @@ impl eframe::App for MyEguiApp {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
                 ui.add(egui::TextEdit::singleline(&mut self.src_url).hint_text("Stream url")).highlight();
             });
+            if ui.add(egui::Button::new("Add +")).clicked() {
+                self.show_add_stram = true;
+            }
             ui.horizontal(|ui| {
                 ui.vertical_centered(|ui| {
                     if self.player_state == PlayerState::Paused {
@@ -131,5 +136,15 @@ impl eframe::App for MyEguiApp {
                 })
             });
         });
+        if self.show_add_stram {
+            egui::Window::new("Add Stream")
+                .collapsible(false)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
+                        ui.add(egui::TextEdit::singleline(&mut self.src_url).hint_text("Stream url")).highlight();
+            });
+            });
+        }
     }
 }
