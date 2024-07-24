@@ -27,7 +27,7 @@ impl MigrationTrait for Migration {
     }
 }
 
-#[derive(DeriveIden)]
+#[derive(Iden)]
 pub enum Podcast {
     Table,
     Id,
