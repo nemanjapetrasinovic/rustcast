@@ -39,7 +39,7 @@ impl MigrationTrait for Migration {
     }
 }
 
-#[derive(DeriveIden)]
+#[derive(Iden)]
 pub enum Episode {
     Table,
     Id,

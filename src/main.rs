@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 #![allow(rustdoc::missing_crate_level_docs)] // it's an example
 
+mod data_provider;
+mod entity;
+
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use eframe::egui;
 use log::error;
@@ -26,7 +29,8 @@ pub struct PlayerWrapper {
     pub player_state: PlayerState,
 }
 
-fn main() {
+#[async_std::main]
+async fn main() {
     env_logger::init();
     let (tx, rx) = unbounded::<PlayerAction>();
     let (tx1, rx1) = unbounded::<PlayerState>();
@@ -64,7 +68,7 @@ fn main() {
     });
 
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 400.0]),
         ..Default::default()
     };
     eframe::run_native(
@@ -77,11 +81,18 @@ fn main() {
     player_thread.join().unwrap();
 }
 
+#[derive(Default)]
+struct Podcast {
+    podcast_url: String,
+    title: String,
+    desc: String
+}
+
 struct MyEguiApp {
     tx: Sender<PlayerAction>,
     rx: Receiver<PlayerState>,
     player_state: PlayerState,
-    src_url: String,
+    podcast_to_add: Podcast,
     show_add_stram: bool
 }
 
@@ -100,7 +111,7 @@ impl MyEguiApp {
             tx,
             rx,
             player_state: PlayerState::Paused,
-            src_url: String::new(),
+            podcast_to_add: Podcast::default(),
             show_add_stram: false,
         }
     }
@@ -113,18 +124,35 @@ impl eframe::App for MyEguiApp {
             Err(_) => {}
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.src_url).hint_text("Stream url")).highlight();
+        egui::SidePanel::left("podcasts_panel")
+            .resizable(true)
+            .default_width(150.0)
+            .width_range(150.0..=600.0)
+            .show(ctx, |ui| {
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.heading("Podcasts");
+                        if ui.add(egui::Button::new("+")).on_hover_text("Add podcast").clicked() {
+                            self.show_add_stram = true;
+                        }
+                    });
+                });
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                });
             });
-            if ui.add(egui::Button::new("Add +")).clicked() {
-                self.show_add_stram = true;
-            }
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            // ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
+            //     ui.add(egui::TextEdit::singleline(&mut self.src_url).hint_text("Stream url")).highlight();
+            // });
+            // if ui.add(egui::Button::new("Add +")).clicked() {
+            //     self.show_add_stram = true;
+            // }
             ui.horizontal(|ui| {
                 ui.vertical_centered(|ui| {
                     if self.player_state == PlayerState::Paused {
                         if ui.add(egui::Button::new("Play")).clicked() {
-                            self.tx.try_send(PlayerAction::Open(self.src_url.clone()));
+                            // self.tx.try_send(PlayerAction::Open(self.src_url.clone()));
                             self.tx.try_send(PlayerAction::Play);
                         }
                     }
@@ -137,14 +165,19 @@ impl eframe::App for MyEguiApp {
             });
         });
         if self.show_add_stram {
-            egui::Window::new("Add Stream")
+            egui::Window::new("Add podcast")
                 .collapsible(false)
                 .resizable(true)
+                .open(&mut self.show_add_stram)
                 .show(ctx, |ui| {
                     ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
-                        ui.add(egui::TextEdit::singleline(&mut self.src_url).hint_text("Stream url")).highlight();
-            });
-            });
+                        ui.add(egui::TextEdit::singleline(&mut self.podcast_to_add.podcast_url).hint_text("Podcast url"));
+                        ui.add(egui::TextEdit::singleline(&mut self.podcast_to_add.title).hint_text("Podcast title"));
+                        ui.add(egui::TextEdit::singleline(&mut self.podcast_to_add.desc).hint_text("Podcast description"));
+                        if ui.add(egui::Button::new("Add")).clicked() {
+                        }
+                    });
+                });
         }
     }
 }
