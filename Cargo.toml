@@ -7,7 +7,7 @@ edition = "2021"
 members = [".", "migrations"]
 
 [dependencies]
-async-std = { version = "1", features = ["attributes", "tokio1"] }
+tokio = { version = "1.39.0", features = ["full"] }
 egui = "0.27.2"
 eframe = "0.27.2"
 egui_extras = "0.27.2"

@@ -3,12 +3,13 @@
 
 mod data_provider;
 mod entity;
+mod podcasts_model;
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use eframe::egui;
 use log::error;
-use std::thread;
 use url2audio::Player;
+use crate::podcasts_model::Podcast;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PlayerAction {
@@ -29,14 +30,13 @@ pub struct PlayerWrapper {
     pub player_state: PlayerState,
 }
 
-#[async_std::main]
+#[tokio::main]
 async fn main() {
     env_logger::init();
     let (tx, rx) = unbounded::<PlayerAction>();
     let (tx1, rx1) = unbounded::<PlayerState>();
-    let mut p = Player::new();
 
-    let player_thread = thread::spawn(move || {
+    let player_thread = tokio::spawn(async move {
         let player = Player::new();
         let mut player_wrapper = PlayerWrapper {
             inner_player: player,
@@ -78,14 +78,7 @@ async fn main() {
     )
     .unwrap_or_else(|e| error!("An error occured {}", e));
 
-    player_thread.join().unwrap();
-}
-
-#[derive(Default)]
-struct Podcast {
-    podcast_url: String,
-    title: String,
-    desc: String
+    player_thread.await.unwrap();
 }
 
 struct MyEguiApp {
@@ -171,9 +164,9 @@ impl eframe::App for MyEguiApp {
                 .open(&mut self.show_add_stram)
                 .show(ctx, |ui| {
                     ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
-                        ui.add(egui::TextEdit::singleline(&mut self.podcast_to_add.podcast_url).hint_text("Podcast url"));
+                        ui.add(egui::TextEdit::singleline(&mut self.podcast_to_add.link).hint_text("Podcast url"));
                         ui.add(egui::TextEdit::singleline(&mut self.podcast_to_add.title).hint_text("Podcast title"));
-                        ui.add(egui::TextEdit::singleline(&mut self.podcast_to_add.desc).hint_text("Podcast description"));
+                        ui.add(egui::TextEdit::singleline(&mut self.podcast_to_add.description).hint_text("Podcast description"));
                         if ui.add(egui::Button::new("Add")).clicked() {
                         }
                     });
