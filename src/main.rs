@@ -8,8 +8,10 @@ mod podcasts_model;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use eframe::egui;
 use log::error;
+use podcasts_model::PodcastsModel;
 use url2audio::Player;
 use crate::podcasts_model::Podcast;
+use std::sync::{Arc, RwLock};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PlayerAction {
@@ -30,11 +32,20 @@ pub struct PlayerWrapper {
     pub player_state: PlayerState,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum AsyncAction {
+    AddPodcast
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::init();
     let (tx, rx) = unbounded::<PlayerAction>();
     let (tx1, rx1) = unbounded::<PlayerState>();
+
+    let podcasts_model = Arc::new(RwLock::new(PodcastsModel::new()));
+    let podcasts_model_1 = podcasts_model.clone();
+    let podcasts_model_2 = podcasts_model.clone();
 
     let player_thread = tokio::spawn(async move {
         let player = Player::new();
@@ -74,7 +85,7 @@ async fn main() {
     eframe::run_native(
         "Rustcast",
         native_options,
-        Box::new(|cc| Box::new(MyEguiApp::new(cc, tx, rx1, PlayerState::Open))),
+        Box::new(|cc| Box::new(MyEguiApp::new(cc, tx, rx1, PlayerState::Open, podcasts_model_2))),
     )
     .unwrap_or_else(|e| error!("An error occured {}", e));
 
@@ -86,7 +97,10 @@ struct MyEguiApp {
     rx: Receiver<PlayerState>,
     player_state: PlayerState,
     podcast_to_add: Podcast,
-    show_add_stram: bool
+    show_add_podcast: bool,
+    podcasts_model: Arc<RwLock<PodcastsModel>>,
+    show_error: bool,
+    error: String,
 }
 
 impl MyEguiApp {
@@ -95,6 +109,7 @@ impl MyEguiApp {
         tx: Sender<PlayerAction>,
         rx: Receiver<PlayerState>,
         player_state: PlayerState,
+        podcasts_model: Arc<RwLock<PodcastsModel>>
     ) -> Self {
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
         // Restore app state using cc.storage (requires the "persistence" feature).
@@ -105,7 +120,10 @@ impl MyEguiApp {
             rx,
             player_state: PlayerState::Paused,
             podcast_to_add: Podcast::default(),
-            show_add_stram: false,
+            show_add_podcast: false,
+            podcasts_model,
+            show_error: false,
+            error: String::new()
         }
     }
 }
@@ -126,7 +144,7 @@ impl eframe::App for MyEguiApp {
                     ui.horizontal(|ui| {
                         ui.heading("Podcasts");
                         if ui.add(egui::Button::new("+")).on_hover_text("Add podcast").clicked() {
-                            self.show_add_stram = true;
+                            self.show_add_podcast = true;
                         }
                     });
                 });
@@ -139,7 +157,7 @@ impl eframe::App for MyEguiApp {
             //     ui.add(egui::TextEdit::singleline(&mut self.src_url).hint_text("Stream url")).highlight();
             // });
             // if ui.add(egui::Button::new("Add +")).clicked() {
-            //     self.show_add_stram = true;
+            //     self.show_add_podcast = true;
             // }
             ui.horizontal(|ui| {
                 ui.vertical_centered(|ui| {
@@ -157,19 +175,44 @@ impl eframe::App for MyEguiApp {
                 })
             });
         });
-        if self.show_add_stram {
+
+        if self.show_add_podcast {
             egui::Window::new("Add podcast")
                 .collapsible(false)
                 .resizable(true)
-                .open(&mut self.show_add_stram)
                 .show(ctx, |ui| {
                     ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
-                        ui.add(egui::TextEdit::singleline(&mut self.podcast_to_add.link).hint_text("Podcast url"));
-                        ui.add(egui::TextEdit::singleline(&mut self.podcast_to_add.title).hint_text("Podcast title"));
-                        ui.add(egui::TextEdit::singleline(&mut self.podcast_to_add.description).hint_text("Podcast description"));
-                        if ui.add(egui::Button::new("Add")).clicked() {
-                        }
+                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.write().unwrap().new_podcast.link).hint_text("Podcast url"));
+                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.write().unwrap().new_podcast.title).hint_text("Podcast title"));
+                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.write().unwrap().new_podcast.description).hint_text("Podcast description"));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                            if ui.add(egui::Button::new("Close")).clicked() {
+                                let mut p = self.podcasts_model.write().unwrap();
+                                p.new_podcast.link = String::new();
+                                p.new_podcast.title = String::new();
+                                p.new_podcast.description = String::new();
+                                drop(p);
+                                self.show_add_podcast = false;
+                            }
+                            if ui.add(egui::Button::new("Add")).clicked() {
+                            }
+                        });
                     });
+                });
+        }
+
+        if self.show_error {
+            egui::Window::new("Error")
+                .collapsible(false)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    ui.label(self.error.clone());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                        if ui.add(egui::Button::new("Ok")).clicked() {
+                            self.show_error = false;
+                            self.error = String::new();
+                        }
+                    })
                 });
         }
     }
