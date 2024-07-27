@@ -5,13 +5,14 @@ mod data_provider;
 mod entity;
 mod podcasts_model;
 
-use crossbeam::channel::{unbounded, Receiver, Sender};
+use data_provider::DataProvider;
 use eframe::egui;
 use log::error;
 use podcasts_model::PodcastsModel;
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use url2audio::Player;
 use crate::podcasts_model::Podcast;
-use std::sync::{Arc, RwLock};
+use sea_orm::{Database, DatabaseConnection};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PlayerAction {
@@ -34,18 +35,42 @@ pub struct PlayerWrapper {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AsyncAction {
-    AddPodcast
+    AddPodcast(Podcast)
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum AsyncActionResult {
 }
 
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    let (tx, rx) = unbounded::<PlayerAction>();
-    let (tx1, rx1) = unbounded::<PlayerState>();
+    let (tx, mut rx) = unbounded_channel::<PlayerAction>();
+    let (tx1, rx1) = unbounded_channel::<PlayerState>();
 
-    let podcasts_model = Arc::new(RwLock::new(PodcastsModel::new()));
-    let podcasts_model_1 = podcasts_model.clone();
-    let podcasts_model_2 = podcasts_model.clone();
+    let (async_action_tx, mut async_action_rx) = unbounded_channel::<AsyncAction>();
+    let (async_action_result_tx, async_action_result_rx) = unbounded_channel::<AsyncAction>();
+
+    let async_action_thread = tokio::spawn(async move {
+        let home = std::env::var("HOME").unwrap();
+        let connection = std::env::var("DATABASE_URL").unwrap_or(format!("sqlite://{}/.rustcast.db?mode=rwc", home));
+        let db: DatabaseConnection = Database::connect(connection)
+            .await
+            .unwrap();
+
+        let data_provider = DataProvider::new(db);
+
+        loop {
+            match async_action_rx.recv().await {
+                Some(AsyncAction::AddPodcast(podcast)) => {
+                    data_provider.add_podcast(podcast)
+                        .await
+                        .map_err(|e| error!("{}", e));
+                },
+                None => break
+            }
+        }
+    });
 
     let player_thread = tokio::spawn(async move {
         let player = Player::new();
@@ -53,25 +78,25 @@ async fn main() {
             inner_player: player,
             player_state: PlayerState::Paused,
         };
+
         // let src = "https://podcast.daskoimladja.com/media/2024-05-27-PONEDELJAK_27.05.2024.mp3";
-        let src = "https://stream.daskoimladja.com:9000/stream";
+        // let src = "https://stream.daskoimladja.com:9000/stream";
 
         loop {
-            match rx.recv() {
-                Ok(PlayerAction::Open(src)) => {
+            match rx.recv().await {
+                Some(PlayerAction::Open(src)) => {
                     player_wrapper.inner_player.open(&src);
-                    tx1.try_send(PlayerState::Playing);
+                    tx1.send(PlayerState::Playing);
                 }
-                Ok(PlayerAction::Play) => {
+                Some(PlayerAction::Play) => {
                     player_wrapper.inner_player.play();
-                    tx1.try_send(PlayerState::Playing);
+                    tx1.send(PlayerState::Playing);
                 }
-                Ok(PlayerAction::Pause) => {
+                Some(PlayerAction::Pause) => {
                     player_wrapper.inner_player.pause();
-                    tx1.try_send(PlayerState::Paused);
+                    tx1.send(PlayerState::Paused);
                 }
-                Err(e) => {
-                    error!("{}", e);
+                None => {
                     break;
                 }
             }
@@ -85,20 +110,21 @@ async fn main() {
     eframe::run_native(
         "Rustcast",
         native_options,
-        Box::new(|cc| Box::new(MyEguiApp::new(cc, tx, rx1, PlayerState::Open, podcasts_model_2))),
+        Box::new(move |cc| Box::new(MyEguiApp::new(cc, tx, rx1, async_action_tx, PlayerState::Open, PodcastsModel::new()))),
     )
     .unwrap_or_else(|e| error!("An error occured {}", e));
 
     player_thread.await.unwrap();
+    async_action_thread.await.unwrap();
 }
 
 struct MyEguiApp {
-    tx: Sender<PlayerAction>,
-    rx: Receiver<PlayerState>,
+    tx: UnboundedSender<PlayerAction>,
+    rx: UnboundedReceiver<PlayerState>,
+    async_action_tx: UnboundedSender<AsyncAction>,
     player_state: PlayerState,
-    podcast_to_add: Podcast,
     show_add_podcast: bool,
-    podcasts_model: Arc<RwLock<PodcastsModel>>,
+    podcasts_model: PodcastsModel,
     show_error: bool,
     error: String,
 }
@@ -106,10 +132,11 @@ struct MyEguiApp {
 impl MyEguiApp {
     fn new(
         _cc: &eframe::CreationContext<'_>,
-        tx: Sender<PlayerAction>,
-        rx: Receiver<PlayerState>,
+        tx: UnboundedSender<PlayerAction>,
+        rx: UnboundedReceiver<PlayerState>,
+        async_action_tx: UnboundedSender<AsyncAction>,
         player_state: PlayerState,
-        podcasts_model: Arc<RwLock<PodcastsModel>>
+        podcasts_model: PodcastsModel
     ) -> Self {
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
         // Restore app state using cc.storage (requires the "persistence" feature).
@@ -118,8 +145,8 @@ impl MyEguiApp {
         MyEguiApp {
             tx,
             rx,
+            async_action_tx,
             player_state: PlayerState::Paused,
-            podcast_to_add: Podcast::default(),
             show_add_podcast: false,
             podcasts_model,
             show_error: false,
@@ -164,7 +191,7 @@ impl eframe::App for MyEguiApp {
                     if self.player_state == PlayerState::Paused {
                         if ui.add(egui::Button::new("Play")).clicked() {
                             // self.tx.try_send(PlayerAction::Open(self.src_url.clone()));
-                            self.tx.try_send(PlayerAction::Play);
+                            self.tx.send(PlayerAction::Play);
                         }
                     }
                     if self.player_state == PlayerState::Playing || self.player_state == PlayerState::Open {
@@ -182,21 +209,24 @@ impl eframe::App for MyEguiApp {
                 .resizable(true)
                 .show(ctx, |ui| {
                     ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
-                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.write().unwrap().new_podcast.link).hint_text("Podcast url"));
-                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.write().unwrap().new_podcast.title).hint_text("Podcast title"));
-                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.write().unwrap().new_podcast.description).hint_text("Podcast description"));
+                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.new_podcast.link).hint_text("Podcast url"));
+                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.new_podcast.title).hint_text("Podcast title"));
+                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.new_podcast.description).hint_text("Podcast description"));
+
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
                             if ui.add(egui::Button::new("Close")).clicked() {
-                                let mut p = self.podcasts_model.write().unwrap();
-                                p.new_podcast.link = String::new();
-                                p.new_podcast.title = String::new();
-                                p.new_podcast.description = String::new();
-                                drop(p);
+                                self.podcasts_model.new_podcast.link = String::new();
+                                self.podcasts_model.new_podcast.title = String::new();
+                                self.podcasts_model.new_podcast.description = String::new();
                                 self.show_add_podcast = false;
                             }
                             if ui.add(egui::Button::new("Add")).clicked() {
+                                self.async_action_tx.send(AsyncAction::AddPodcast(self.podcasts_model.new_podcast.clone()))
+                                    .unwrap_or_else(|e| error!("{:?}", e.to_string()));
+                                self.show_add_podcast = false;
                             }
                         });
+
                     });
                 });
         }
