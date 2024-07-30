@@ -3,13 +3,14 @@ use sea_orm::*;
 
 #[derive(Default, PartialEq, Debug, Clone)]
 pub struct Podcast {
+    pub id: Option<i32>,
     pub title: String,
     pub link: String,
     pub description: String
 }
 
 pub struct PodcastsModel {
-    pub podcasts: Vec<Podcast>,
+    pub podcasts: Option<Vec<Podcast>>,
     pub current_podcast: Podcast,
     pub new_podcast: Podcast
 }
@@ -31,6 +32,17 @@ impl From<Podcast> for podcast::ActiveModel {
             link: ActiveValue::set(Some(p.link.to_owned())),
             description: ActiveValue::set(Some(p.description.to_owned())),
             ..Default::default()
+        }
+    }
+}
+
+impl From<podcast::Model> for Podcast {
+    fn from(p: podcast::Model) -> Self {
+        Podcast {
+            id: Some(p.id),
+            link: p.link.unwrap(),
+            title: p.title.unwrap(),
+            description: p.description.unwrap()
         }
     }
 }

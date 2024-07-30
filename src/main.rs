@@ -35,11 +35,13 @@ pub struct PlayerWrapper {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AsyncAction {
-    AddPodcast(Podcast)
+    AddPodcast(Podcast),
+    GetPodcasts,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AsyncActionResult {
+    PodcastsUpdate(Vec<Podcast>)
 }
 
 #[tokio::main]
@@ -49,7 +51,7 @@ async fn main() {
     let (tx1, rx1) = unbounded_channel::<PlayerState>();
 
     let (async_action_tx, mut async_action_rx) = unbounded_channel::<AsyncAction>();
-    let (async_action_result_tx, async_action_result_rx) = unbounded_channel::<AsyncAction>();
+    let (async_action_result_tx, async_action_result_rx) = unbounded_channel::<AsyncActionResult>();
 
     let async_action_thread = tokio::spawn(async move {
         let home = std::env::var("HOME").unwrap();
@@ -59,6 +61,7 @@ async fn main() {
             .unwrap();
 
         let data_provider = DataProvider::new(db);
+        data_provider.get_podcasts().await.unwrap();
 
         loop {
             match async_action_rx.recv().await {
@@ -67,6 +70,11 @@ async fn main() {
                         .await
                         .map_err(|e| error!("{}", e));
                 },
+                Some(AsyncAction::GetPodcasts) => {
+                    if let Ok(res) = data_provider.get_podcasts().await {
+                        async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(res));
+                    }
+                }
                 None => break
             }
         }
@@ -110,7 +118,7 @@ async fn main() {
     eframe::run_native(
         "Rustcast",
         native_options,
-        Box::new(move |cc| Box::new(MyEguiApp::new(cc, tx, rx1, async_action_tx, PlayerState::Open, PodcastsModel::new()))),
+        Box::new(move |cc| Box::new(MyEguiApp::new(cc, tx, rx1, async_action_tx, async_action_result_rx, PlayerState::Open, PodcastsModel::new()))),
     )
     .unwrap_or_else(|e| error!("An error occured {}", e));
 
@@ -122,6 +130,7 @@ struct MyEguiApp {
     tx: UnboundedSender<PlayerAction>,
     rx: UnboundedReceiver<PlayerState>,
     async_action_tx: UnboundedSender<AsyncAction>,
+    async_action_result_rx: UnboundedReceiver<AsyncActionResult>,
     player_state: PlayerState,
     show_add_podcast: bool,
     podcasts_model: PodcastsModel,
@@ -135,6 +144,7 @@ impl MyEguiApp {
         tx: UnboundedSender<PlayerAction>,
         rx: UnboundedReceiver<PlayerState>,
         async_action_tx: UnboundedSender<AsyncAction>,
+        async_action_result_rx: UnboundedReceiver<AsyncActionResult>,
         player_state: PlayerState,
         podcasts_model: PodcastsModel
     ) -> Self {
@@ -146,6 +156,7 @@ impl MyEguiApp {
             tx,
             rx,
             async_action_tx,
+            async_action_result_rx,
             player_state: PlayerState::Paused,
             show_add_podcast: false,
             podcasts_model,
@@ -160,12 +171,19 @@ impl eframe::App for MyEguiApp {
         match self.rx.try_recv() {
             Ok(player_state) => self.player_state = player_state,
             Err(_) => {}
-        }
+        };
+
+        match self.async_action_result_rx.try_recv() {
+            Ok(AsyncActionResult::PodcastsUpdate(podcasts)) => {
+                self.podcasts_model.podcasts = Some(podcasts);
+            }
+            Err(_) => {}
+        };
 
         egui::SidePanel::left("podcasts_panel")
             .resizable(true)
             .default_width(150.0)
-            .width_range(150.0..=600.0)
+            .width_range(150.0..=300.0)
             .show(ctx, |ui| {
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
@@ -175,7 +193,20 @@ impl eframe::App for MyEguiApp {
                         }
                     });
                 });
-                egui::ScrollArea::vertical().show(ui, |ui| {
+                egui::ScrollArea::vertical().max_width(600.0).show(ui, |ui| {
+                    ui.with_layout(
+                        egui::Layout::top_down(egui::Align::LEFT).with_cross_justify(true),
+                        |ui| {
+                            if let Some(podcasts) = &self.podcasts_model.podcasts {
+                                for p in podcasts {
+                                    ui.add(egui::Link::new(&p.title));
+                                }
+                            } else {
+                                error!("refreshing");
+                                self.async_action_tx.send(AsyncAction::GetPodcasts);
+                            }
+                        },
+                    );
                 });
             });
 
@@ -186,21 +217,24 @@ impl eframe::App for MyEguiApp {
             // if ui.add(egui::Button::new("Add +")).clicked() {
             //     self.show_add_podcast = true;
             // }
-            ui.horizontal(|ui| {
-                ui.vertical_centered(|ui| {
-                    if self.player_state == PlayerState::Paused {
-                        if ui.add(egui::Button::new("Play")).clicked() {
-                            // self.tx.try_send(PlayerAction::Open(self.src_url.clone()));
-                            self.tx.send(PlayerAction::Play);
-                        }
-                    }
-                    if self.player_state == PlayerState::Playing || self.player_state == PlayerState::Open {
-                        if ui.add(egui::Button::new("Pause")).clicked() {
-                            self.tx.send(PlayerAction::Pause);
-                        }
-                    }
-                })
-            });
+            ui.with_layout(
+                egui::Layout::top_down(egui::Align::LEFT).with_cross_justify(true),|ui| {
+                    ui.horizontal(|ui| {
+                        ui.vertical_centered(|ui| {
+                            if self.player_state == PlayerState::Paused {
+                                if ui.add(egui::Button::new("Play")).clicked() {
+                                    // self.tx.try_send(PlayerAction::Open(self.src_url.clone()));
+                                    self.tx.send(PlayerAction::Play);
+                                }
+                            }
+                            if self.player_state == PlayerState::Playing || self.player_state == PlayerState::Open {
+                                if ui.add(egui::Button::new("Pause")).clicked() {
+                                    self.tx.send(PlayerAction::Pause);
+                                }
+                            }
+                        })
+                    });
+                });
         });
 
         if self.show_add_podcast {
@@ -222,6 +256,8 @@ impl eframe::App for MyEguiApp {
                             }
                             if ui.add(egui::Button::new("Add")).clicked() {
                                 self.async_action_tx.send(AsyncAction::AddPodcast(self.podcasts_model.new_podcast.clone()))
+                                    .unwrap_or_else(|e| error!("{:?}", e.to_string()));
+                                self.async_action_tx.send(AsyncAction::GetPodcasts)
                                     .unwrap_or_else(|e| error!("{:?}", e.to_string()));
                                 self.show_add_podcast = false;
                             }
