@@ -18,4 +18,13 @@ impl DataProvider {
         podcast_to_add.insert(&self.db).await?;
         Ok(())
     }
+
+    pub async fn get_podcasts(&self) -> Result<Vec<Podcast>, sea_orm::DbErr> {
+        let podcasts: Vec<podcast::Model> = podcast::Entity::find()
+            .all(&self.db)
+        .await?;
+        let p: Vec<Podcast> = podcasts.iter().map(|e| e.clone().into()).collect();
+        println!("{:?}", p);
+        Ok(p)
+    }
 }
