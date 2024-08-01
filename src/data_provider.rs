@@ -13,8 +13,14 @@ impl DataProvider {
         }
     }
 
-    pub async fn add_podcast(&self, podcast: Podcast) -> Result<(), sea_orm::DbErr> {
-        let podcast_to_add = podcast::ActiveModel::from(podcast);
+    pub async fn add_podcast(&self, title: String, link: String, description: String) -> Result<(), sea_orm::DbErr> {
+        let podcast_to_add = podcast::ActiveModel{
+            title: ActiveValue::set(Some(title)),
+            link: ActiveValue::set(Some(link)),
+            description: ActiveValue::set(Some(description)),
+            ..Default::default()
+        };
+
         podcast_to_add.insert(&self.db).await?;
         Ok(())
     }

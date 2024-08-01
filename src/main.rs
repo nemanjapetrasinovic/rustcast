@@ -35,7 +35,7 @@ pub struct PlayerWrapper {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AsyncAction {
-    AddPodcast(Podcast),
+    AddPodcast(String, String, String),
     GetPodcasts,
 }
 
@@ -65,8 +65,8 @@ async fn main() {
 
         loop {
             match async_action_rx.recv().await {
-                Some(AsyncAction::AddPodcast(podcast)) => {
-                    data_provider.add_podcast(podcast)
+                Some(AsyncAction::AddPodcast(title, link, description)) => {
+                    data_provider.add_podcast(title, link, description)
                         .await
                         .map_err(|e| error!("{}", e));
                 },
@@ -245,22 +245,31 @@ impl eframe::App for MyEguiApp {
                 .resizable(true)
                 .show(ctx, |ui| {
                     ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
-                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.new_podcast.link).hint_text("Podcast url"));
-                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.new_podcast.title).hint_text("Podcast title"));
-                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.new_podcast.description).hint_text("Podcast description"));
+                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.podcast_dialog.link).hint_text("Podcast url"));
+                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.podcast_dialog.title).hint_text("Podcast title"));
+                        ui.add(egui::TextEdit::singleline(&mut self.podcasts_model.podcast_dialog.description).hint_text("Podcast description"));
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
                             if ui.add(egui::Button::new("Close")).clicked() {
-                                self.podcasts_model.new_podcast.link = String::new();
-                                self.podcasts_model.new_podcast.title = String::new();
-                                self.podcasts_model.new_podcast.description = String::new();
+                                self.podcasts_model.podcast_dialog.link = String::new();
+                                self.podcasts_model.podcast_dialog.title = String::new();
+                                self.podcasts_model.podcast_dialog.description = String::new();
                                 self.show_add_podcast = false;
                             }
                             if ui.add(egui::Button::new("Add")).clicked() {
-                                self.async_action_tx.send(AsyncAction::AddPodcast(self.podcasts_model.new_podcast.clone()))
+                                self.async_action_tx.send(AsyncAction::AddPodcast(
+                                    self.podcasts_model.podcast_dialog.title.clone(),
+                                    self.podcasts_model.podcast_dialog.link.clone(),
+                                    self.podcasts_model.podcast_dialog.description.clone()
+                                ))
                                     .unwrap_or_else(|e| error!("{:?}", e.to_string()));
+
                                 self.async_action_tx.send(AsyncAction::GetPodcasts)
                                     .unwrap_or_else(|e| error!("{:?}", e.to_string()));
+                                
+                                self.podcasts_model.podcast_dialog.link = String::new();
+                                self.podcasts_model.podcast_dialog.title = String::new();
+                                self.podcasts_model.podcast_dialog.description = String::new();
                                 self.show_add_podcast = false;
                             }
                         });

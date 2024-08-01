@@ -12,7 +12,14 @@ pub struct Podcast {
 pub struct PodcastsModel {
     pub podcasts: Option<Vec<podcast::Model>>,
     pub current_podcast: Podcast,
-    pub new_podcast: Podcast,
+    pub podcast_dialog: PodcastDialog,
+}
+
+#[derive(Default, PartialEq, Debug, Clone)]
+pub struct PodcastDialog {
+    pub title: String,
+    pub link: String,
+    pub description: String
 }
 
 impl PodcastsModel {
@@ -20,7 +27,17 @@ impl PodcastsModel {
         PodcastsModel {
             podcasts: Default::default(),
             current_podcast: Default::default(),
-            new_podcast: Default::default()
+            podcast_dialog: Default::default(),
+        }
+    }
+}
+
+impl From<podcast::Model> for PodcastDialog {
+    fn from(p: podcast::Model) -> Self {
+        PodcastDialog {
+            link: p.link.unwrap(),
+            title: p.title.unwrap(),
+            description: p.description.unwrap()
         }
     }
 }
