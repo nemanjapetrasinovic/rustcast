@@ -10,9 +10,9 @@ pub struct Podcast {
 }
 
 pub struct PodcastsModel {
-    pub podcasts: Option<Vec<Podcast>>,
+    pub podcasts: Option<Vec<podcast::Model>>,
     pub current_podcast: Podcast,
-    pub new_podcast: Podcast
+    pub new_podcast: Podcast,
 }
 
 impl PodcastsModel {

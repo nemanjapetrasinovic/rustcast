@@ -7,11 +7,11 @@ mod podcasts_model;
 
 use data_provider::DataProvider;
 use eframe::egui;
+use entity::podcast;
 use log::error;
-use podcasts_model::PodcastsModel;
+use podcasts_model::{Podcast, PodcastsModel};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use url2audio::Player;
-use crate::podcasts_model::Podcast;
 use sea_orm::{Database, DatabaseConnection};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -41,7 +41,7 @@ pub enum AsyncAction {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AsyncActionResult {
-    PodcastsUpdate(Vec<Podcast>)
+    PodcastsUpdate(Vec<podcast::Model>)
 }
 
 #[tokio::main]
@@ -199,7 +199,9 @@ impl eframe::App for MyEguiApp {
                         |ui| {
                             if let Some(podcasts) = &self.podcasts_model.podcasts {
                                 for p in podcasts {
-                                    ui.add(egui::Link::new(&p.title));
+                                    if let Some(title) = &p.title {
+                                        ui.add(egui::Link::new(title));
+                                    }
                                 }
                             } else {
                                 error!("refreshing");
