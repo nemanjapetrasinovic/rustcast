@@ -5,11 +5,15 @@ mod data_provider;
 mod entity;
 mod podcasts_model;
 
+use std::{io::BufReader, str::FromStr};
+
 use data_provider::DataProvider;
-use eframe::egui;
-use entity::podcast;
+use eframe::egui::{self, TextStyle};
+use egui_extras::{Column, TableBuilder};
+use entity::{episode, podcast};
 use log::error;
 use podcasts_model::{Podcast, PodcastsModel};
+use rss::Channel;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use url2audio::Player;
 use sea_orm::{Database, DatabaseConnection};
@@ -37,11 +41,13 @@ pub struct PlayerWrapper {
 pub enum AsyncAction {
     AddPodcast(String, String, String),
     GetPodcasts,
+    GetEpisodes(String),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AsyncActionResult {
-    PodcastsUpdate(Vec<podcast::Model>)
+    PodcastsUpdate(Option<Vec<podcast::Model>>),
+    EpisodesUpdate(Option<Vec<rss::Item>>),
 }
 
 #[tokio::main]
@@ -71,9 +77,31 @@ async fn main() {
                         .map_err(|e| error!("{}", e));
                 },
                 Some(AsyncAction::GetPodcasts) => {
-                    if let Ok(res) = data_provider.get_podcasts().await {
-                        async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(res));
+                    match data_provider.get_podcasts().await {
+                        Ok(res) => {
+                            async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(Some(res)));
+                        }
+                        Err(_) => {
+                            async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(None));
+                        }
                     }
+                }
+                Some(AsyncAction::GetEpisodes(link)) => {
+                    let start = instant::Instant::now();
+
+                    let mut res = None;
+                    if let Ok(episodes) = ureq::get(&link).call() {
+                        if let Ok(episodes) = episodes.into_string() {
+                            if let Ok(channel) = Channel::from_str(&episodes) {
+                                res = Some(channel.items().to_vec());
+                            }
+                        }
+                    }
+
+                    async_action_result_tx.send(AsyncActionResult::EpisodesUpdate(res));
+
+                    let diff = start.elapsed().as_millis();
+                    error!("load_all_people: duration: {}", diff);
                 }
                 None => break
             }
@@ -111,6 +139,28 @@ async fn main() {
         }
     });
 
+    // puffin::set_scopes_on(true); // tell puffin to collect data
+
+    // match puffin_http::Server::new("127.0.0.1:8585") {
+    //     Ok(puffin_server) => {
+    //         eprintln!("Run:  cargo install puffin_viewer && puffin_viewer --url 127.0.0.1:8585");
+    //
+    //         std::process::Command::new("puffin_viewer")
+    //             .arg("--url")
+    //             .arg("127.0.0.1:8585")
+    //             .spawn()
+    //             .ok();
+    //
+    //         // We can store the server if we want, but in this case we just want
+    //         // it to keep running. Dropping it closes the server, so let's not drop it!
+    //         #[allow(clippy::mem_forget)]
+    //         std::mem::forget(puffin_server);
+    //     }
+    //     Err(err) => {
+    //         eprintln!("Failed to start puffin server: {err}");
+    //     }
+    // };
+    //
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 400.0]),
         ..Default::default()
@@ -168,6 +218,9 @@ impl MyEguiApp {
 
 impl eframe::App for MyEguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // puffin::profile_function!();
+        // puffin::GlobalProfiler::lock().new_frame();
+
         match self.rx.try_recv() {
             Ok(player_state) => self.player_state = player_state,
             Err(_) => {}
@@ -175,7 +228,10 @@ impl eframe::App for MyEguiApp {
 
         match self.async_action_result_rx.try_recv() {
             Ok(AsyncActionResult::PodcastsUpdate(podcasts)) => {
-                self.podcasts_model.podcasts = Some(podcasts);
+                self.podcasts_model.podcasts = podcasts;
+            }
+            Ok(AsyncActionResult::EpisodesUpdate(episodes)) => {
+                self.podcasts_model.episodes = episodes;
             }
             Err(_) => {}
         };
@@ -200,7 +256,10 @@ impl eframe::App for MyEguiApp {
                             if let Some(podcasts) = &self.podcasts_model.podcasts {
                                 for p in podcasts {
                                     if let Some(title) = &p.title {
-                                        ui.add(egui::Link::new(title));
+                                        if ui.add(egui::Link::new(title)).clicked() {
+                                            // puffin::profile_scope!("table render");
+                                            self.async_action_tx.send(AsyncAction::GetEpisodes(p.link.clone().unwrap()));
+                                        }
                                     }
                                 }
                             } else {
@@ -212,32 +271,87 @@ impl eframe::App for MyEguiApp {
                 });
             });
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            // ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
-            //     ui.add(egui::TextEdit::singleline(&mut self.src_url).hint_text("Stream url")).highlight();
-            // });
-            // if ui.add(egui::Button::new("Add +")).clicked() {
-            //     self.show_add_podcast = true;
-            // }
-            ui.with_layout(
-                egui::Layout::top_down(egui::Align::LEFT).with_cross_justify(true),|ui| {
-                    ui.horizontal(|ui| {
-                        ui.vertical_centered(|ui| {
-                            if self.player_state == PlayerState::Paused {
-                                if ui.add(egui::Button::new("Play")).clicked() {
-                                    // self.tx.try_send(PlayerAction::Open(self.src_url.clone()));
-                                    self.tx.send(PlayerAction::Play);
-                                }
-                            }
-                            if self.player_state == PlayerState::Playing || self.player_state == PlayerState::Open {
-                                if ui.add(egui::Button::new("Pause")).clicked() {
-                                    self.tx.send(PlayerAction::Pause);
-                                }
-                            }
-                        })
-                    });
+        egui::TopBottomPanel::bottom("bottom_panel")
+            .resizable(false)
+            .min_height(70.0)
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.heading("Bottom Panel");
                 });
+                ui.vertical_centered(|ui| {
+                    ui.vertical_centered(|ui| {
+                        if self.player_state == PlayerState::Paused {
+                            if ui.add(egui::Button::new("Play")).clicked() {
+                                // self.tx.try_send(PlayerAction::Open(self.src_url.clone()));
+                                self.tx.send(PlayerAction::Play);
+                            }
+                        }
+                        if self.player_state == PlayerState::Playing || self.player_state == PlayerState::Open {
+                            if ui.add(egui::Button::new("Pause")).clicked() {
+                                self.tx.send(PlayerAction::Pause);
+                            }
+                        }
+                    })
+                });
+            });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            // puffin::profile_scope!("Table update");
+            ui.vertical(|ui| {
+                ui.heading("Episodes");
+            });
+            if let Some(episodes) = &self.podcasts_model.episodes {
+                egui::ScrollArea::horizontal().show(ui, |ui| {
+                    let text_height = egui::TextStyle::Body
+                        .resolve(ui.style())
+                        .size
+                        .max(ui.spacing().interact_size.y);
+
+                    let ah = ui.available_height();
+                    let table = TableBuilder::new(ui)
+                        .striped(true)
+                        .resizable(false)
+                        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+                        .column(Column::auto())
+                        .column(Column::auto())
+                        .column(Column::remainder())
+                        .min_scrolled_height(0.0)
+                        .max_scroll_height(ah);
+
+                    table
+                        .header(20.0, |mut header| {
+                            header.col(|ui| {
+                                ui.strong("Ep");
+                            });
+                            header.col(|ui| {
+                                ui.strong("Action");
+                            });
+                            header.col(|ui| {
+                                ui.strong("Title");
+                            });
+                        })
+                        .body(|mut body| {
+                            body.rows(text_height, episodes.len(), |mut row| {
+                                let row_index = row.index();
+
+                                row.col(|ui| {
+                                    ui.label(row_index.to_string());
+                                });
+                                row.col(|ui| {
+                                    if ui.add(egui::Button::new("Play")).clicked() {
+                                        self.tx.send(PlayerAction::Open(episodes[row_index].link.clone().unwrap()));
+                                        error!("{:?}", episodes[row_index].link.clone().unwrap());
+                                    }
+                                });
+                                row.col(|ui| {
+                                    ui.label(episodes[row_index].title.clone().unwrap());
+                                });
+                            });
+                        });
+                });
+            }
         });
+
 
         if self.show_add_podcast {
             egui::Window::new("Add podcast")
