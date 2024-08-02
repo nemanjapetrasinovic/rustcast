@@ -1,5 +1,4 @@
-use crate::{data_provider, entity::podcast};
-use sea_orm::*;
+use crate::entity::podcast;
 
 #[derive(Default, PartialEq, Debug, Clone)]
 pub struct Podcast {
@@ -13,6 +12,7 @@ pub struct PodcastsModel {
     pub podcasts: Option<Vec<podcast::Model>>,
     pub current_podcast: Podcast,
     pub podcast_dialog: PodcastDialog,
+    pub episodes: Option<Vec<rss::Item>>,
 }
 
 #[derive(Default, PartialEq, Debug, Clone)]
@@ -28,6 +28,7 @@ impl PodcastsModel {
             podcasts: Default::default(),
             current_podcast: Default::default(),
             podcast_dialog: Default::default(),
+            episodes: Default::default(),
         }
     }
 }
@@ -35,28 +36,6 @@ impl PodcastsModel {
 impl From<podcast::Model> for PodcastDialog {
     fn from(p: podcast::Model) -> Self {
         PodcastDialog {
-            link: p.link.unwrap(),
-            title: p.title.unwrap(),
-            description: p.description.unwrap()
-        }
-    }
-}
-
-impl From<Podcast> for podcast::ActiveModel {
-    fn from(p : Podcast) -> Self {
-        podcast::ActiveModel {
-            title: ActiveValue::set(Some(p.title.to_owned())),
-            link: ActiveValue::set(Some(p.link.to_owned())),
-            description: ActiveValue::set(Some(p.description.to_owned())),
-            ..Default::default()
-        }
-    }
-}
-
-impl From<podcast::Model> for Podcast {
-    fn from(p: podcast::Model) -> Self {
-        Podcast {
-            id: Some(p.id),
             link: p.link.unwrap(),
             title: p.title.unwrap(),
             description: p.description.unwrap()
