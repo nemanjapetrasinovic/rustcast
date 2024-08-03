@@ -339,7 +339,7 @@ impl eframe::App for MyEguiApp {
                                 });
                                 row.col(|ui| {
                                     if ui.add(egui::Button::new("Play")).clicked() {
-                                        self.tx.send(PlayerAction::Open(episodes[row_index].link.clone().unwrap()));
+                                        self.tx.send(PlayerAction::Open(episodes[row_index].enclosure.clone().unwrap().url));
                                         error!("{:?}", episodes[row_index].link.clone().unwrap());
                                     }
                                 });
