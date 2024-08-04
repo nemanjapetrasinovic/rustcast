@@ -122,6 +122,7 @@ async fn main() {
             match player_action_rx.recv().await {
                 Some(PlayerAction::Open(src)) => {
                     player_wrapper.inner_player.open(&src);
+                    player_wrapper.inner_player.play();
                     player_state_tx.send(PlayerState::Playing);
                 }
                 Some(PlayerAction::Play) => {
@@ -221,7 +222,7 @@ impl eframe::App for MyEguiApp {
         // puffin::profile_function!();
         // puffin::GlobalProfiler::lock().new_frame();
 
-        ctx.request_repaint();
+        // ctx.request_repaint();
         match self.player_action_rx.try_recv() {
             Ok(player_state) => self.player_state = player_state,
             Err(_) => {}
@@ -276,11 +277,9 @@ impl eframe::App for MyEguiApp {
             .resizable(false)
             .min_height(70.0)
             .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.heading("Bottom Panel");
-                });
-                ui.vertical_centered(|ui| {
-                    ui.vertical_centered(|ui| {
+                ui.with_layout(egui::Layout::bottom_up(egui::Align::Center),
+                    |ui| {
+                        ui.add_space(10.0);
                         if self.player_state == PlayerState::Paused {
                             if ui.add(egui::Button::new("Play")).clicked() {
                                 // self.tx.try_send(PlayerAction::Open(self.src_url.clone()));
@@ -292,8 +291,14 @@ impl eframe::App for MyEguiApp {
                                 self.player_action_tx.send(PlayerAction::Pause);
                             }
                         }
-                    })
-                });
+                        let mut a = 0.0;
+                        if let Some(current_episode) = &self.podcasts_model.current_episode {
+                            ui.label(current_episode.title.clone().unwrap());
+                        }
+                    });
+                // ui.vertical_centered(|ui| {
+                //     ui.heading("Bottom Panel");
+                // });
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -341,6 +346,7 @@ impl eframe::App for MyEguiApp {
                                 row.col(|ui| {
                                     if ui.add(egui::Button::new("Play")).clicked() {
                                         self.player_action_tx.send(PlayerAction::Open(episodes[row_index].enclosure.clone().unwrap().url));
+                                        self.podcasts_model.current_episode = Some(episodes[row_index].clone());
                                         error!("{:?}", episodes[row_index].link.clone().unwrap());
                                     }
                                 });
