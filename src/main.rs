@@ -53,8 +53,8 @@ pub enum AsyncActionResult {
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    let (tx, mut rx) = unbounded_channel::<PlayerAction>();
-    let (tx1, rx1) = unbounded_channel::<PlayerState>();
+    let (player_action_tx, mut player_action_rx) = unbounded_channel::<PlayerAction>();
+    let (player_state_tx, player_state_rx) = unbounded_channel::<PlayerState>();
 
     let (async_action_tx, mut async_action_rx) = unbounded_channel::<AsyncAction>();
     let (async_action_result_tx, async_action_result_rx) = unbounded_channel::<AsyncActionResult>();
@@ -119,18 +119,18 @@ async fn main() {
         // let src = "https://stream.daskoimladja.com:9000/stream";
 
         loop {
-            match rx.recv().await {
+            match player_action_rx.recv().await {
                 Some(PlayerAction::Open(src)) => {
                     player_wrapper.inner_player.open(&src);
-                    tx1.send(PlayerState::Playing);
+                    player_state_tx.send(PlayerState::Playing);
                 }
                 Some(PlayerAction::Play) => {
                     player_wrapper.inner_player.play();
-                    tx1.send(PlayerState::Playing);
+                    player_state_tx.send(PlayerState::Playing);
                 }
                 Some(PlayerAction::Pause) => {
                     player_wrapper.inner_player.pause();
-                    tx1.send(PlayerState::Paused);
+                    player_state_tx.send(PlayerState::Paused);
                 }
                 None => {
                     break;
@@ -168,7 +168,7 @@ async fn main() {
     eframe::run_native(
         "Rustcast",
         native_options,
-        Box::new(move |cc| Box::new(MyEguiApp::new(cc, tx, rx1, async_action_tx, async_action_result_rx, PlayerState::Open, PodcastsModel::new()))),
+        Box::new(move |cc| Box::new(MyEguiApp::new(cc, player_action_tx, player_state_rx, async_action_tx, async_action_result_rx, PlayerState::Open, PodcastsModel::new()))),
     )
     .unwrap_or_else(|e| error!("An error occured {}", e));
 
@@ -177,8 +177,8 @@ async fn main() {
 }
 
 struct MyEguiApp {
-    tx: UnboundedSender<PlayerAction>,
-    rx: UnboundedReceiver<PlayerState>,
+    player_action_tx: UnboundedSender<PlayerAction>,
+    player_action_rx: UnboundedReceiver<PlayerState>,
     async_action_tx: UnboundedSender<AsyncAction>,
     async_action_result_rx: UnboundedReceiver<AsyncActionResult>,
     player_state: PlayerState,
@@ -191,8 +191,8 @@ struct MyEguiApp {
 impl MyEguiApp {
     fn new(
         _cc: &eframe::CreationContext<'_>,
-        tx: UnboundedSender<PlayerAction>,
-        rx: UnboundedReceiver<PlayerState>,
+        player_action_tx: UnboundedSender<PlayerAction>,
+        player_action_rx: UnboundedReceiver<PlayerState>,
         async_action_tx: UnboundedSender<AsyncAction>,
         async_action_result_rx: UnboundedReceiver<AsyncActionResult>,
         player_state: PlayerState,
@@ -203,8 +203,8 @@ impl MyEguiApp {
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
         // for e.g. egui::PaintCallback.
         MyEguiApp {
-            tx,
-            rx,
+            player_action_tx,
+            player_action_rx,
             async_action_tx,
             async_action_result_rx,
             player_state: PlayerState::Paused,
@@ -221,7 +221,8 @@ impl eframe::App for MyEguiApp {
         // puffin::profile_function!();
         // puffin::GlobalProfiler::lock().new_frame();
 
-        match self.rx.try_recv() {
+        ctx.request_repaint();
+        match self.player_action_rx.try_recv() {
             Ok(player_state) => self.player_state = player_state,
             Err(_) => {}
         };
@@ -283,12 +284,12 @@ impl eframe::App for MyEguiApp {
                         if self.player_state == PlayerState::Paused {
                             if ui.add(egui::Button::new("Play")).clicked() {
                                 // self.tx.try_send(PlayerAction::Open(self.src_url.clone()));
-                                self.tx.send(PlayerAction::Play);
+                                self.player_action_tx.send(PlayerAction::Play);
                             }
                         }
                         if self.player_state == PlayerState::Playing || self.player_state == PlayerState::Open {
                             if ui.add(egui::Button::new("Pause")).clicked() {
-                                self.tx.send(PlayerAction::Pause);
+                                self.player_action_tx.send(PlayerAction::Pause);
                             }
                         }
                     })
@@ -339,7 +340,7 @@ impl eframe::App for MyEguiApp {
                                 });
                                 row.col(|ui| {
                                     if ui.add(egui::Button::new("Play")).clicked() {
-                                        self.tx.send(PlayerAction::Open(episodes[row_index].enclosure.clone().unwrap().url));
+                                        self.player_action_tx.send(PlayerAction::Open(episodes[row_index].enclosure.clone().unwrap().url));
                                         error!("{:?}", episodes[row_index].link.clone().unwrap());
                                     }
                                 });
