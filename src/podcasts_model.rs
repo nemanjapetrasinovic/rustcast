@@ -13,6 +13,7 @@ pub struct PodcastsModel {
     pub current_podcast: Podcast,
     pub podcast_dialog: PodcastDialog,
     pub episodes: Option<Vec<rss::Item>>,
+    pub current_episode: Option<rss::Item>,
 }
 
 #[derive(Default, PartialEq, Debug, Clone)]
@@ -29,6 +30,7 @@ impl PodcastsModel {
             current_podcast: Default::default(),
             podcast_dialog: Default::default(),
             episodes: Default::default(),
+            current_episode: Default::default(),
         }
     }
 }
