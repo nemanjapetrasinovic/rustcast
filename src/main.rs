@@ -4,11 +4,13 @@
 mod data_provider;
 mod entity;
 mod podcasts_model;
+mod widgets;
 
 use std::{io::BufReader, str::FromStr};
 
 use data_provider::DataProvider;
 use eframe::egui::{self, TextStyle};
+use ::egui::Widget;
 use egui_extras::{Column, TableBuilder};
 use entity::{episode, podcast};
 use log::error;
@@ -17,6 +19,7 @@ use rss::Channel;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use url2audio::Player;
 use sea_orm::{Database, DatabaseConnection};
+use widgets::timeline::Timeline;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PlayerAction {
@@ -291,14 +294,12 @@ impl eframe::App for MyEguiApp {
                                 self.player_action_tx.send(PlayerAction::Pause);
                             }
                         }
-                        let mut a = 0.0;
+                        ui.add_space(5.0);
+                        ui.add(Timeline::default());
                         if let Some(current_episode) = &self.podcasts_model.current_episode {
                             ui.label(current_episode.title.clone().unwrap());
                         }
                     });
-                // ui.vertical_centered(|ui| {
-                //     ui.heading("Bottom Panel");
-                // });
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
