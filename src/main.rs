@@ -225,7 +225,6 @@ impl eframe::App for MyEguiApp {
         // puffin::profile_function!();
         // puffin::GlobalProfiler::lock().new_frame();
 
-        // ctx.request_repaint();
         match self.player_action_rx.try_recv() {
             Ok(player_state) => self.player_state = player_state,
             Err(_) => {}
@@ -414,5 +413,7 @@ impl eframe::App for MyEguiApp {
                     })
                 });
         }
+
+        ctx.request_repaint();
     }
 }
