@@ -1,4 +1,3 @@
-
 #[derive(Debug, Default)]
 pub struct Timeline {
     pub progress: f64,
@@ -24,19 +23,31 @@ impl eframe::egui::Widget for Timeline {
             ui.painter()
                 .rect(rect, radius, visuals.bg_fill, visuals.bg_stroke);
 
-            let mut fill_rect = eframe::egui::Rect::ZERO;
-            fill_rect.min = rect.min;
-            fill_rect.max = eframe::egui::Pos2::new(rect.min.x + ui.available_size().x * 0.5, rect.max.y);
-            fill_rect.set_height(rect.height());
+            // timeline_fill(&rect, &visuals.bg_stroke, ui, eframe::egui::Pos2::new(rect.max.x * 0.5, 0.0));
 
-            ui.painter().rect(fill_rect, radius, eframe::egui::Color32::from_rgb(0, 155, 255), visuals.bg_stroke);
 
-            let circle_x = rect.left() + 50.0;
-            let center = eframe::egui::pos2(circle_x, rect.center().y);
-            ui.painter()
-                .circle(center, 6.0, visuals.bg_fill, visuals.fg_stroke);
+            if response.clicked() || response.dragged() {
+                if let Some(pt) = response.interact_pointer_pos() {
+                    println!("{:?}", pt);
+                    timeline_fill(&rect, &visuals.bg_stroke, ui, pt);
+                    response.mark_changed();
+                    return response;
+                }
+            }
         }
 
         response
     }
+}
+
+fn timeline_fill(timeline_rect: &eframe::egui::Rect, stroke: &eframe::egui::Stroke, ui: &eframe::egui::Ui, pt: eframe::egui::Pos2) {
+    let mut fill_rect = eframe::egui::Rect::ZERO;
+    fill_rect.min = timeline_rect.min;
+    fill_rect.max = eframe::egui::Pos2::new(pt.x, timeline_rect.max.y);
+    fill_rect.set_height(timeline_rect.height());
+    ui.painter().rect(fill_rect, 0.3 * timeline_rect.height(), eframe::egui::Color32::from_rgb(0, 155, 255), *stroke);
+
+    let center = eframe::egui::pos2(pt.x, timeline_rect.center().y);
+    ui.painter()
+        .circle(center, 6.0, ui.style().noninteractive().bg_fill, ui.style().noninteractive().fg_stroke);
 }
