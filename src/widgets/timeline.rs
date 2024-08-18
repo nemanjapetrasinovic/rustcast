@@ -1,19 +1,21 @@
-#[derive(Debug, Default)]
-pub struct Timeline {
+#[derive(Debug)]
+pub struct Timeline<'a> {
     pub progress: f64,
     pub total: f64,
+    pub seek_position: &'a mut f64,
 }
 
-impl Timeline {
-    pub fn new(progress: f64, total: f64) -> Self {
+impl<'a> Timeline<'a> {
+    pub fn new(progress: f64, total: f64, seek_position: &'a mut f64) -> Self {
         Self {
             progress,
-            total
+            total,
+            seek_position,
         }
     }
 }
 
-impl eframe::egui::Widget for Timeline {
+impl<'a> eframe::egui::Widget for &mut Timeline<'a> {
     fn ui(self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
         let desired_size_x = ui.available_size().x;
         let desired_size_y = 7.0;
@@ -29,17 +31,29 @@ impl eframe::egui::Widget for Timeline {
                 .rect(rect, radius, visuals.bg_fill, visuals.bg_stroke);
 
             let mut fill_rect = rect;
-            if response.clicked() || response.dragged() {
+            if response.is_pointer_button_down_on() || response.dragged() {
                 if let Some(pt) = response.interact_pointer_pos() {
                     fill_rect.max.x = pt.x;
+                    if fill_rect.width() > rect.width() {
+                        fill_rect.set_width(rect.width());
+                    }
+
                     ui.painter()
                         .rect_filled(fill_rect, radius, eframe::egui::Color32::from_rgb(0, 155, 255));
+
+                    if pt.x < fill_rect.min.x {
+                        *self.seek_position = 0.0;
+                    } else if pt.x > rect.max.x {
+                        *self.seek_position = self.total - 10.0;
+                    } else {
+                        *self.seek_position = self.total * fill_rect.width() as f64 / rect.width() as f64;
+                    }
                     response.mark_changed();
-                } else {
-                    fill_rect.set_width(fill_rect.width() * self.progress as f32 / self.total as f32);
-                    ui.painter()
-                        .rect_filled(fill_rect, radius, eframe::egui::Color32::from_rgb(0, 155, 255));
                 }
+            } else {
+                fill_rect.set_width(fill_rect.width() * self.progress as f32 / self.total as f32);
+                ui.painter()
+                    .rect_filled(fill_rect, radius, eframe::egui::Color32::from_rgb(0, 155, 255));
             }
         }
 
