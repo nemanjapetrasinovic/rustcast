@@ -17,10 +17,6 @@ ureq = "2.9.7"
 url2audio = "0.2.2"
 sea-orm = { version = "^0.12.0", features = [ "sqlx-sqlite", "runtime-async-std-native-tls", "macros" ] }
 rss = "2.0.8"
-instant = "0.1.13"
-puffin_egui = "0.29.0"
-puffin = "0.19.1"
-puffin_http = "0.16.1"
 
 [profile.dev]
 opt-level = 1
