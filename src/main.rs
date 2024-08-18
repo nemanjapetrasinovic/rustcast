@@ -36,6 +36,7 @@ pub enum PlayerState {
 pub struct PlayerWrapper {
     pub inner_player: Player,
     pub player_state: PlayerState,
+    pub seek_position: f64,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -109,6 +110,7 @@ async fn main() {
     let player_wrapper = PlayerWrapper {
         inner_player: player,
         player_state: PlayerState::Paused,
+        seek_position: 0.0
     };
 
     let native_options = eframe::NativeOptions {
@@ -256,7 +258,15 @@ impl eframe::App for MyEguiApp {
 
                     ui.add_space(5.0);
 
-                    ui.add(Timeline::default());
+                    let timeline_add = ui.add(&mut Timeline::new(
+                        self.player_wrapper.inner_player.current_position(),
+                        self.player_wrapper.inner_player.duration(),
+                        &mut self.player_wrapper.seek_position
+                    ));
+                    if timeline_add.clicked() || timeline_add.drag_stopped() {
+                        self.player_wrapper.inner_player.seek(self.player_wrapper.seek_position);
+                    }
+
                     if let Some(current_episode) = &self.podcasts_model.current_episode {
                         ui.label(current_episode.title.clone().unwrap());
                     }
