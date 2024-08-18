@@ -85,8 +85,6 @@ async fn main() {
                     }
                 },
                 Some(AsyncAction::GetEpisodes(link)) => {
-                    let start = instant::Instant::now();
-
                     let mut res = None;
                     if let Ok(episodes) = ureq::get(&link).call() {
                         if let Ok(episodes) = episodes.into_string() {
@@ -97,9 +95,6 @@ async fn main() {
                     }
 
                     async_action_result_tx.send(AsyncActionResult::EpisodesUpdate(res));
-
-                    let diff = start.elapsed().as_millis();
-                    error!("load_all_people: duration: {}", diff);
                 }
                 None => break,
             }
@@ -176,9 +171,6 @@ impl MyEguiApp {
 
 impl eframe::App for MyEguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // puffin::profile_function!();
-        // puffin::GlobalProfiler::lock().new_frame();
-
         match self.async_action_result_rx.try_recv() {
             Ok(AsyncActionResult::PodcastsUpdate(podcasts)) => {
                 self.podcasts_model.podcasts = podcasts;
@@ -216,7 +208,6 @@ impl eframe::App for MyEguiApp {
                                     for p in podcasts {
                                         if let Some(title) = &p.title {
                                             if ui.add(egui::Link::new(title)).clicked() {
-                                                // puffin::profile_scope!("table render");
                                                 self.async_action_tx.send(
                                                     AsyncAction::GetEpisodes(
                                                         p.link.clone().unwrap(),
@@ -274,7 +265,6 @@ impl eframe::App for MyEguiApp {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // puffin::profile_scope!("Table update");
             ui.vertical(|ui| {
                 ui.heading("Episodes");
             });
