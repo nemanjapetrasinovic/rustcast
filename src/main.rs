@@ -217,7 +217,6 @@ impl eframe::App for MyEguiApp {
                                         }
                                     }
                                 } else {
-                                    error!("refreshing");
                                     self.async_action_tx.send(AsyncAction::GetPodcasts);
                                 }
                             },
