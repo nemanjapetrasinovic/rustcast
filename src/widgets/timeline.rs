@@ -17,14 +17,13 @@ impl<'a> Timeline<'a> {
 
 impl<'a> eframe::egui::Widget for &mut Timeline<'a> {
     fn ui(self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
-        let desired_size_x = ui.available_size().x;
+        let desired_size_x = (ui.available_size().x as i32 - 120) as f32;
         let desired_size_y = 7.0;
         let desired_size : eframe::egui::Vec2 = eframe::egui::vec2(desired_size_x, desired_size_y);
         let (rect, mut response) = ui.allocate_exact_size(desired_size, eframe::egui::Sense::click_and_drag());
+        let visuals = ui.style().interact(&response);
 
         if ui.is_rect_visible(rect) {
-            let visuals = ui.style().interact(&response);
-
             let rect = rect.expand(visuals.expansion);
             let radius = 0.3 * rect.height();
             ui.painter()
@@ -57,6 +56,31 @@ impl<'a> eframe::egui::Widget for &mut Timeline<'a> {
             }
         }
 
+        ui.painter().text(
+            rect.left_top() + eframe::egui::Vec2::new(-60.0, - 3.0),
+            eframe::egui::Align2::LEFT_TOP,
+            time_to_display(self.progress),
+            eframe::egui::FontId::proportional(12.0),
+            visuals.text_color()
+        ); 
+
+        ui.painter().text(
+            rect.right_top() + eframe::egui::Vec2::new(10.0, - 3.0),
+            eframe::egui::Align2::LEFT_TOP,
+            time_to_display(self.total),
+            eframe::egui::FontId::proportional(12.0),
+            visuals.text_color()
+        ); 
+
         response
     }
+}
+
+fn time_to_display(seconds: f64) -> String {
+    let is: i64 = seconds.round() as i64;
+    let hours = is / (60 * 60);
+    let mins = (is % (60 * 60)) / 60;
+    let secs = seconds - 60.0 * mins as f64 - 60.0 * 60.0 * hours as f64; // is % 60;
+
+    format!("{}:{:0>2}:{:0>4.1}", hours, mins, secs)
 }
