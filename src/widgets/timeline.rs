@@ -33,9 +33,6 @@ impl<'a> eframe::egui::Widget for &mut Timeline<'a> {
                 .rect(rect, radius, visuals.bg_fill, visuals.bg_stroke);
 
             let mut fill_rect = rect;
-            if response.hovered() {
-
-            }
             if response.is_pointer_button_down_on() || response.dragged() {
                 if let Some(pt) = response.interact_pointer_pos() {
                     fill_rect.max.x = pt.x;
