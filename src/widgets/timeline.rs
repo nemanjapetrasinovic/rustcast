@@ -32,6 +32,18 @@ impl<'a> eframe::egui::Widget for &mut Timeline<'a> {
             ui.painter()
                 .rect(rect, radius, visuals.bg_fill, visuals.bg_stroke);
 
+            if response.hovered() {
+                if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
+                    draw_tooltip(
+                        ui,
+                        eframe::egui::Pos2::new(mouse_pos.x, rect.min.y - 20.0),
+                        time_to_display(self.total * (mouse_pos.x - rect.min.x) as f64 / rect.width() as f64),
+                        visuals.text_color(),
+                        visuals.bg_fill,
+                    );
+                }
+            }
+
             let mut fill_rect = rect;
             if response.is_pointer_button_down_on() || response.dragged() {
                 if let Some(pt) = response.interact_pointer_pos() {
@@ -54,14 +66,6 @@ impl<'a> eframe::egui::Widget for &mut Timeline<'a> {
                         *self.seek_position =
                             self.total * fill_rect.width() as f64 / rect.width() as f64;
                     }
-
-                    draw_tooltip(
-                        ui,
-                        eframe::egui::Pos2::new(pt.x, rect.min.y - 20.0),
-                        time_to_display(*self.seek_position),
-                        visuals.text_color(),
-                        visuals.bg_fill,
-                    );
 
                     response.mark_changed();
                 }
