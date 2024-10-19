@@ -50,6 +50,7 @@ pub enum AsyncAction {
 pub enum AsyncActionResult {
     PodcastsUpdate(Option<Vec<podcast::Model>>),
     EpisodesUpdate(Option<Vec<rss::Item>>),
+    AddPodcastResult(Option<String>),
 }
 
 #[tokio::main]
@@ -71,10 +72,27 @@ async fn main() {
         loop {
             match async_action_rx.recv().await {
                 Some(AsyncAction::AddPodcast(title, link, description)) => {
-                    data_provider
-                        .add_podcast(title, link, description)
-                        .await
-                        .map_err(|e| error!("{}", e));
+                    match ureq::get(&link).call() {
+                        Ok(episodes) => {
+                            match episodes.into_string() {
+                                Ok(episodes) => {
+                                    if let Err(e) = Channel::from_str(&episodes) {
+                                        async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
+                                    } else if let Err(e) = data_provider
+                                        .add_podcast(title, link, description)
+                                        .await {
+                                        async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
+                                    }
+                                },
+                                Err(e) => {
+                                    async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
+                        }
+                    }
                 }
                 Some(AsyncAction::GetPodcasts) => match data_provider.get_podcasts().await {
                     Ok(res) => {
@@ -177,6 +195,12 @@ impl eframe::App for MyEguiApp {
             }
             Ok(AsyncActionResult::EpisodesUpdate(episodes)) => {
                 self.podcasts_model.episodes = episodes;
+            },
+            Ok(AsyncActionResult::AddPodcastResult(res)) => {
+                if res.is_some() {
+                    self.error = res.unwrap();
+                    self.show_error = true;
+                }
             }
             Err(_) => {}
         };
