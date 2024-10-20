@@ -256,7 +256,7 @@ impl eframe::App for MyEguiApp {
                     ui.add_space(10.0);
 
                     if self.player_wrapper.player_state == PlayerState::Paused {
-                        if ui.add(egui::Button::new("Play")).clicked() {
+                        if ui.add(egui::Button::new("▶")).clicked() {
                             self.player_wrapper.inner_player.play();
                             self.player_wrapper.player_state = PlayerState::Playing;
                         }
@@ -264,7 +264,7 @@ impl eframe::App for MyEguiApp {
 
                     if self.player_wrapper.player_state == PlayerState::Playing
                     || self.player_state == PlayerState::Open {
-                        if ui.add(egui::Button::new("Pause")).clicked() {
+                        if ui.add(egui::Button::new("⏸")).clicked() {
                             self.player_wrapper.inner_player.pause();
                             self.player_wrapper.player_state = PlayerState::Paused;
                         }
@@ -328,7 +328,13 @@ impl eframe::App for MyEguiApp {
                                     ui.label(row_index.to_string());
                                 });
                                 row.col(|ui| {
-                                    if ui.add(egui::Button::new("Play")).clicked() {
+                                    if self.podcasts_model.current_episode == Some(episodes[row_index].clone())
+                                        && self.player_wrapper.player_state == PlayerState::Playing {
+                                        if ui.add(egui::Button::new("⏸")).clicked() {
+                                            self.player_wrapper.inner_player.pause();
+                                            self.player_wrapper.player_state = PlayerState::Paused;
+                                        }
+                                    } else if ui.add(egui::Button::new("▶")).clicked() {
                                         self.player_wrapper.inner_player.open(&episodes[row_index].enclosure.clone().unwrap().url);
                                         self.player_wrapper.inner_player.play();
                                         self.player_wrapper.player_state = PlayerState::Playing;
