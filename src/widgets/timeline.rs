@@ -34,10 +34,19 @@ impl<'a> eframe::egui::Widget for &mut Timeline<'a> {
 
             if response.hovered() {
                 if let Some(mouse_pos) = ui.input(|i| i.pointer.hover_pos()) {
+                    let seek_time;
+                    if mouse_pos.x < rect.min.x {
+                        seek_time = 0.0;
+                    } else if mouse_pos.x > rect.max.x {
+                        seek_time = self.total;
+                    } else {
+                        seek_time = self.total * (mouse_pos.x - rect.min.x) as f64 / rect.width() as f64
+                    }
+
                     draw_tooltip(
                         ui,
                         eframe::egui::Pos2::new(mouse_pos.x, rect.min.y - 20.0),
-                        time_to_display(self.total * (mouse_pos.x - rect.min.x) as f64 / rect.width() as f64),
+                        time_to_display(seek_time),
                         visuals.text_color(),
                         visuals.bg_fill,
                     );
