@@ -50,6 +50,7 @@ pub enum AsyncAction {
 pub enum AsyncActionResult {
     PodcastsUpdate(Option<Vec<podcast::Model>>),
     EpisodesUpdate(Option<Vec<rss::Item>>),
+    AddPodcastResult(Option<String>),
 }
 
 #[tokio::main]
@@ -71,10 +72,27 @@ async fn main() {
         loop {
             match async_action_rx.recv().await {
                 Some(AsyncAction::AddPodcast(title, link, description)) => {
-                    data_provider
-                        .add_podcast(title, link, description)
-                        .await
-                        .map_err(|e| error!("{}", e));
+                    match ureq::get(&link).call() {
+                        Ok(episodes) => {
+                            match episodes.into_string() {
+                                Ok(episodes) => {
+                                    if let Err(e) = Channel::from_str(&episodes) {
+                                        async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
+                                    } else if let Err(e) = data_provider
+                                        .add_podcast(title, link, description)
+                                        .await {
+                                        async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
+                                    }
+                                },
+                                Err(e) => {
+                                    async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
+                        }
+                    }
                 }
                 Some(AsyncAction::GetPodcasts) => match data_provider.get_podcasts().await {
                     Ok(res) => {
@@ -177,6 +195,12 @@ impl eframe::App for MyEguiApp {
             }
             Ok(AsyncActionResult::EpisodesUpdate(episodes)) => {
                 self.podcasts_model.episodes = episodes;
+            },
+            Ok(AsyncActionResult::AddPodcastResult(res)) => {
+                if res.is_some() {
+                    self.error = res.unwrap();
+                    self.show_error = true;
+                }
             }
             Err(_) => {}
         };
@@ -217,7 +241,6 @@ impl eframe::App for MyEguiApp {
                                         }
                                     }
                                 } else {
-                                    error!("refreshing");
                                     self.async_action_tx.send(AsyncAction::GetPodcasts);
                                 }
                             },
@@ -233,7 +256,7 @@ impl eframe::App for MyEguiApp {
                     ui.add_space(10.0);
 
                     if self.player_wrapper.player_state == PlayerState::Paused {
-                        if ui.add(egui::Button::new("Play")).clicked() {
+                        if ui.add(egui::Button::new("▶")).clicked() {
                             self.player_wrapper.inner_player.play();
                             self.player_wrapper.player_state = PlayerState::Playing;
                         }
@@ -241,7 +264,7 @@ impl eframe::App for MyEguiApp {
 
                     if self.player_wrapper.player_state == PlayerState::Playing
                     || self.player_state == PlayerState::Open {
-                        if ui.add(egui::Button::new("Pause")).clicked() {
+                        if ui.add(egui::Button::new("⏸")).clicked() {
                             self.player_wrapper.inner_player.pause();
                             self.player_wrapper.player_state = PlayerState::Paused;
                         }
@@ -299,13 +322,19 @@ impl eframe::App for MyEguiApp {
                             });
                         })
                         .body(|body| {
-                            body.rows(text_height, episodes.len(), |mut row| {
+                            body.rows(text_height + 5.0, episodes.len(), |mut row| {
                                 let row_index = row.index();
                                 row.col(|ui| {
                                     ui.label(row_index.to_string());
                                 });
                                 row.col(|ui| {
-                                    if ui.add(egui::Button::new("Play")).clicked() {
+                                    if self.podcasts_model.current_episode == Some(episodes[row_index].clone())
+                                        && self.player_wrapper.player_state == PlayerState::Playing {
+                                        if ui.add(egui::Button::new("⏸").min_size(eframe::egui::Vec2::new(15.0, 15.0)).fill(eframe::egui::Color32::from_rgb(0, 155, 255))).clicked() {
+                                            self.player_wrapper.inner_player.pause();
+                                            self.player_wrapper.player_state = PlayerState::Paused;
+                                        }
+                                    } else if ui.add(egui::Button::new("▶").min_size(eframe::egui::Vec2::new(15.0, 15.0))).clicked() {
                                         self.player_wrapper.inner_player.open(&episodes[row_index].enclosure.clone().unwrap().url);
                                         self.player_wrapper.inner_player.play();
                                         self.player_wrapper.player_state = PlayerState::Playing;
