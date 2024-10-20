@@ -322,7 +322,7 @@ impl eframe::App for MyEguiApp {
                             });
                         })
                         .body(|body| {
-                            body.rows(text_height, episodes.len(), |mut row| {
+                            body.rows(text_height + 5.0, episodes.len(), |mut row| {
                                 let row_index = row.index();
                                 row.col(|ui| {
                                     ui.label(row_index.to_string());
@@ -330,11 +330,11 @@ impl eframe::App for MyEguiApp {
                                 row.col(|ui| {
                                     if self.podcasts_model.current_episode == Some(episodes[row_index].clone())
                                         && self.player_wrapper.player_state == PlayerState::Playing {
-                                        if ui.add(egui::Button::new("⏸")).clicked() {
+                                        if ui.add(egui::Button::new("⏸").min_size(eframe::egui::Vec2::new(15.0, 15.0)).fill(eframe::egui::Color32::from_rgb(0, 155, 255))).clicked() {
                                             self.player_wrapper.inner_player.pause();
                                             self.player_wrapper.player_state = PlayerState::Paused;
                                         }
-                                    } else if ui.add(egui::Button::new("▶")).clicked() {
+                                    } else if ui.add(egui::Button::new("▶").min_size(eframe::egui::Vec2::new(15.0, 15.0))).clicked() {
                                         self.player_wrapper.inner_player.open(&episodes[row_index].enclosure.clone().unwrap().url);
                                         self.player_wrapper.inner_player.play();
                                         self.player_wrapper.player_state = PlayerState::Playing;
