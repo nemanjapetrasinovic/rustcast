@@ -5,6 +5,7 @@ mod data_provider;
 mod entity;
 mod podcasts_model;
 mod widgets;
+mod utils;
 
 use std::str::FromStr;
 use data_provider::DataProvider;
@@ -77,29 +78,29 @@ async fn main() {
                             match episodes.into_string() {
                                 Ok(episodes) => {
                                     if let Err(e) = Channel::from_str(&episodes) {
-                                        async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
+                                        let _ = async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
                                     } else if let Err(e) = data_provider
                                         .add_podcast(title, link, description)
                                         .await {
-                                        async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
+                                        let _ = async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
                                     }
                                 },
                                 Err(e) => {
-                                    async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
+                                    let _ = async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
                                 }
                             }
                         },
                         Err(e) => {
-                            async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
+                            let _ = async_action_result_tx.send(AsyncActionResult::AddPodcastResult(Some(e.to_string())));
                         }
                     }
                 }
                 Some(AsyncAction::GetPodcasts) => match data_provider.get_podcasts().await {
                     Ok(res) => {
-                        async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(Some(res)));
+                        let _ = async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(Some(res)));
                     }
                     Err(_) => {
-                        async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(None));
+                        let _ = async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(None));
                     }
                 },
                 Some(AsyncAction::GetEpisodes(link)) => {
@@ -112,7 +113,7 @@ async fn main() {
                         }
                     }
 
-                    async_action_result_tx.send(AsyncActionResult::EpisodesUpdate(res));
+                    let _ = async_action_result_tx.send(AsyncActionResult::EpisodesUpdate(res));
                 }
                 None => break,
             }
@@ -232,7 +233,15 @@ impl eframe::App for MyEguiApp {
                                     for p in podcasts {
                                         if let Some(title) = &p.title {
                                             if ui.add(egui::Link::new(title)).clicked() {
-                                                self.async_action_tx.send(
+                                                self.podcasts_model.current_podcast = podcasts_model::Podcast {
+                                                    id: Some(p.id),
+                                                    title: p.title.clone().unwrap(),
+                                                    link: p.link.clone().unwrap(),
+                                                    description: p.description.clone().unwrap()
+                                                };
+
+
+                                                let _ = self.async_action_tx.send(
                                                     AsyncAction::GetEpisodes(
                                                         p.link.clone().unwrap(),
                                                     ),
@@ -241,7 +250,7 @@ impl eframe::App for MyEguiApp {
                                         }
                                     }
                                 } else {
-                                    self.async_action_tx.send(AsyncAction::GetPodcasts);
+                                    let _ = self.async_action_tx.send(AsyncAction::GetPodcasts);
                                 }
                             },
                         );
@@ -255,19 +264,16 @@ impl eframe::App for MyEguiApp {
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                     ui.add_space(10.0);
 
-                    if self.player_wrapper.player_state == PlayerState::Paused {
-                        if ui.add(egui::Button::new("▶")).clicked() {
+                    if self.player_wrapper.player_state == PlayerState::Paused && ui.add(egui::Button::new("▶")).clicked() {
                             self.player_wrapper.inner_player.play();
                             self.player_wrapper.player_state = PlayerState::Playing;
                         }
-                    }
 
-                    if self.player_wrapper.player_state == PlayerState::Playing
-                    || self.player_state == PlayerState::Open {
-                        if ui.add(egui::Button::new("⏸")).clicked() {
+                    if (self.player_wrapper.player_state == PlayerState::Playing
+                        || self.player_state == PlayerState::Open)
+                        && ui.add(egui::Button::new("⏸")).clicked() {
                             self.player_wrapper.inner_player.pause();
                             self.player_wrapper.player_state = PlayerState::Paused;
-                        }
                     }
 
                     ui.add_space(5.0);
