@@ -2,7 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "podcast")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -16,11 +16,19 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::episode::Entity")]
     Episode,
+    #[sea_orm(has_many = "super::episode_state::Entity")]
+    EpisodeState,
 }
 
 impl Related<super::episode::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Episode.def()
+    }
+}
+
+impl Related<super::episode_state::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::EpisodeState.def()
     }
 }
 
