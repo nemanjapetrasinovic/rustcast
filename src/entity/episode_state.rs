@@ -2,23 +2,28 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
-#[sea_orm(table_name = "episode")]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[sea_orm(table_name = "episode_state")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
+    #[sea_orm(column_type = "Double")]
+    pub time: f64,
+    pub finished: bool,
     pub podcast_id: i32,
-    pub title: Option<String>,
-    pub link: Option<String>,
-    pub description: Option<String>,
-    pub guid: Option<String>,
-    pub pub_date: Option<String>,
+    pub ep_link: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_many = "super::episode_state::Entity")]
-    EpisodeState,
+    #[sea_orm(
+        belongs_to = "super::episode::Entity",
+        from = "Column::EpLink",
+        to = "super::episode::Column::Link",
+        on_update = "NoAction",
+        on_delete = "NoAction"
+    )]
+    Episode,
     #[sea_orm(
         belongs_to = "super::podcast::Entity",
         from = "Column::PodcastId",
@@ -29,9 +34,9 @@ pub enum Relation {
     Podcast,
 }
 
-impl Related<super::episode_state::Entity> for Entity {
+impl Related<super::episode::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::EpisodeState.def()
+        Relation::Episode.def()
     }
 }
 

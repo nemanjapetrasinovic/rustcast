@@ -1,6 +1,6 @@
 use sea_orm::*;
 use crate::entity::podcast;
-use crate::podcasts_model::Podcast;
+use crate::entity::episode_state;
 
 pub struct DataProvider {
     db: DatabaseConnection
@@ -30,5 +30,10 @@ impl DataProvider {
             .all(&self.db)
         .await?;
         Ok(res)
+    }
+
+    pub async fn save_episode_state(&self, progress: f32, podcast_id: i32, link: &str) -> Result<(), sea_orm::DbErr> {
+
+        Ok(())
     }
 }
