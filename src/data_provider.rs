@@ -90,4 +90,13 @@ impl DataProvider {
         episode_state_to_add.insert(&self.db).await?;
         Ok(())
     }
+
+    pub async fn get_episode_state(&self, link: &str) -> Result<Option<episode_state::Model>, sea_orm::DbErr> {
+        let res: Option<episode_state::Model> = episode_state::Entity::find()
+            .filter(episode_state::Column::EpLink.eq(link))
+            .one(&self.db)
+            .await?;
+
+        Ok(res)
+    }
 }

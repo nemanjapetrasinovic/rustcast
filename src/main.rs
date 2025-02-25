@@ -46,7 +46,8 @@ pub enum AsyncAction {
     AddPodcast(String, String, String),
     GetPodcasts,
     GetEpisodes(String, i32),
-    SaveEpisodeState(f64, i32, String)
+    SaveEpisodeState(f64, i32, String),
+    LoadEpisodeState(String)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -55,6 +56,7 @@ pub enum AsyncActionResult {
     EpisodesUpdate(Option<Vec<episode::Model>>),
     AddPodcastResult(Option<String>),
     UniversalResult(Option<String>),
+    EpisodeStateUpdate(f64),
 }
 
 #[tokio::main]
@@ -126,6 +128,20 @@ async fn main() {
                 Some(AsyncAction::SaveEpisodeState(progress, podcast_id, link)) => {
                     if let Err(e) = data_provider.upsert_episode_state(progress, podcast_id, &link).await {
                         let _ = async_action_result_tx.send(AsyncActionResult::UniversalResult(Some(e.to_string())));
+                    }
+                }
+                Some(AsyncAction::LoadEpisodeState(link)) => {
+                    match data_provider.get_episode_state(&link).await {
+                        Ok(res) => {
+                            if res.is_some() {
+                                let _ = async_action_result_tx.send(AsyncActionResult::EpisodeStateUpdate(res.unwrap().time));
+                            } else {
+                                let _ = async_action_result_tx.send(AsyncActionResult::EpisodeStateUpdate(0.0));
+                            }
+                        }
+                        Err(e) => {
+                            let _ = async_action_result_tx.send(AsyncActionResult::UniversalResult(Some(e.to_string())));
+                        }
                     }
                 }
                 None => break,
@@ -222,6 +238,12 @@ impl eframe::App for MyEguiApp {
                     self.show_error = true;
                 }
             }
+            Ok(AsyncActionResult::EpisodeStateUpdate(res)) => {
+                self.player_wrapper.inner_player.open(self.podcasts_model.current_episode.as_ref().unwrap().link.as_ref().unwrap());
+                self.player_wrapper.inner_player.seek(res);
+                self.player_wrapper.inner_player.play();
+                self.player_wrapper.player_state = PlayerState::Playing;
+            }
             Err(_) => {}
         };
 
@@ -295,7 +317,11 @@ impl eframe::App for MyEguiApp {
                             self.player_wrapper.inner_player.pause();
                             self.player_wrapper.player_state = PlayerState::Paused;
 
-                            self.async_action_tx.send(AsyncAction::SaveEpisodeState(self.player_wrapper.inner_player.current_position(), self.podcasts_model.current_podcast.id.unwrap(), self.podcasts_model.current_episode.clone().unwrap().link.unwrap())).unwrap()
+                            self.async_action_tx.send(AsyncAction::SaveEpisodeState(
+                                self.player_wrapper.inner_player.current_position(),
+                                self.podcasts_model.current_podcast.id.unwrap(),
+                                self.podcasts_model.current_episode.clone().unwrap().link.unwrap())
+                            ).unwrap();
                     }
 
                     ui.add_space(5.0);
@@ -361,11 +387,25 @@ impl eframe::App for MyEguiApp {
                                         if ui.add(egui::Button::new("⏸").min_size(eframe::egui::Vec2::new(15.0, 15.0)).fill(eframe::egui::Color32::from_rgb(0, 155, 255))).clicked() {
                                             self.player_wrapper.inner_player.pause();
                                             self.player_wrapper.player_state = PlayerState::Paused;
+
+                                            self.async_action_tx.send(AsyncAction::SaveEpisodeState(
+                                                self.player_wrapper.inner_player.current_position(),
+                                                self.podcasts_model.current_podcast.id.unwrap(),
+                                                self.podcasts_model.current_episode.clone().unwrap().link.unwrap())
+                                            ).unwrap();
                                         }
                                     } else if ui.add(egui::Button::new("▶").min_size(eframe::egui::Vec2::new(15.0, 15.0))).clicked() {
-                                        self.player_wrapper.inner_player.open(&episodes[row_index].link.clone().unwrap());
-                                        self.player_wrapper.inner_player.play();
-                                        self.player_wrapper.player_state = PlayerState::Playing;
+                                        if self.podcasts_model.current_episode.is_some() {
+                                            self.async_action_tx.send(AsyncAction::SaveEpisodeState(
+                                                self.player_wrapper.inner_player.current_position(),
+                                                self.podcasts_model.current_podcast.id.unwrap(),
+                                                self.podcasts_model.current_episode.clone().unwrap().link.unwrap())
+                                            ).unwrap();
+                                        }
+
+                                        self.async_action_tx
+                                            .send(AsyncAction::LoadEpisodeState(episodes[row_index].clone().link.unwrap()))
+                                            .unwrap_or_else(|e| error!("{:?}", e.to_string()));
                                         self.podcasts_model.current_episode = Some(episodes[row_index].clone());
                                     }
                                 });
