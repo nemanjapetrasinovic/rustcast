@@ -1,4 +1,5 @@
 use sea_orm::*;
+use crate::entity::episode;
 use crate::entity::podcast;
 use crate::entity::episode_state;
 
@@ -14,7 +15,7 @@ impl DataProvider {
     }
 
     pub async fn add_podcast(&self, title: String, link: String, description: String) -> Result<(), sea_orm::DbErr> {
-        let podcast_to_add = podcast::ActiveModel{
+        let podcast_to_add = podcast::ActiveModel {
             title: ActiveValue::set(Some(title)),
             link: ActiveValue::set(Some(link)),
             description: ActiveValue::set(Some(description)),
@@ -32,8 +33,61 @@ impl DataProvider {
         Ok(res)
     }
 
-    pub async fn save_episode_state(&self, progress: f32, podcast_id: i32, link: &str) -> Result<(), sea_orm::DbErr> {
+    pub async  fn get_all_episodes(&self, podcast_id: i32) -> Result<Vec<episode::Model>, sea_orm::DbErr> {
+        let episodes: Vec<episode::Model> = episode::Entity::find()
+            .filter(episode::Column::PodcastId.eq(podcast_id))
+            .all(&self.db)
+            .await?;
 
+        Ok(episodes)
+    }
+
+    pub async fn add_episodes(&self, episodes: Vec<rss::Item>, podcast_id: i32) -> Result<(), sea_orm::DbErr> {
+        let active_models: Vec<episode::ActiveModel> = episodes.into_iter().map(Into::into).map(|mut episode: episode::ActiveModel| {
+            episode.podcast_id = ActiveValue::Set(podcast_id);
+            episode
+            }
+        ).collect();
+        episode::Entity::insert_many(active_models).exec(&self.db).await?;
+        Ok(())
+    }
+
+    pub async fn delete_episodes_by_podcast_id(&self, podcast_id: i32) -> Result<(), sea_orm::DbErr> {
+        episode::Entity::delete_many().filter(episode::Column::PodcastId.eq(podcast_id)).exec(&self.db).await?;
+        Ok(())
+    }
+
+    pub async  fn upsert_episode_state(&self, progress: f64, podcast_id: i32, link: &str) -> Result<(), sea_orm::DbErr> {
+        let episode_state_active_model = episode_state::ActiveModel {
+            time: ActiveValue::Set(progress),
+            finished: ActiveValue::Set(false),
+            podcast_id: ActiveValue::Set(podcast_id),
+            ep_link: ActiveValue::Set(link.to_string()),
+            ..Default::default()
+        };
+
+        episode_state::Entity::insert(episode_state_active_model)
+            .on_conflict(
+                sea_query::OnConflict::column(episode_state::Column::EpLink)
+                    .update_column(episode_state::Column::Time)
+                    .to_owned()
+            )
+            .exec(&self.db)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn save_episode_state(&self, progress: f64, podcast_id: i32, link: &str) -> Result<(), sea_orm::DbErr> {
+        let episode_state_to_add = episode_state::ActiveModel {
+            time: ActiveValue::Set(progress),
+            finished: ActiveValue::Set(false),
+            podcast_id: ActiveValue::Set(podcast_id),
+            ep_link: ActiveValue::Set(link.to_string()),
+            ..Default::default()
+        };
+
+        episode_state_to_add.insert(&self.db).await?;
         Ok(())
     }
 }

@@ -19,21 +19,13 @@ impl MigrationTrait for Migration {
                             .col(ColumnDef::new(EpisodeState::Time).float().not_null().default(0.0))
                             .col(ColumnDef::new(EpisodeState::Finished).boolean().not_null().default(false))
                             .col(ColumnDef::new(EpisodeState::PodcastId).integer().not_null())
-                            .col(ColumnDef::new(EpisodeState::EpLink).string().not_null())
+                            .col(ColumnDef::new(EpisodeState::EpLink).string().not_null().unique_key())
                             .foreign_key(
                                 ForeignKey::create()
                                     .name("fk-episode-state-podcast-id")
                                     .from(EpisodeState::Table, EpisodeState::PodcastId)
                                     .to(Podcast::Table, Podcast::Id)
                                     .on_delete(ForeignKeyAction::Cascade)
-                            )
-                            .to_owned()
-                            .foreign_key(
-                                ForeignKey::create()
-                                    .name("fk-episode-state-episode")
-                                    .from(EpisodeState::Table, EpisodeState::EpLink)
-                                    .to(Episode::Table, Episode::Link)
-                                    .on_delete(ForeignKeyAction::NoAction)
                             )
                             .to_owned()
             ).await

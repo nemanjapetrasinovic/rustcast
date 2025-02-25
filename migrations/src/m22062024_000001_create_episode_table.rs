@@ -17,7 +17,7 @@ impl MigrationTrait for Migration {
                             .col(ColumnDef::new(Episode::Id).integer().not_null().auto_increment().primary_key())
                             .col(ColumnDef::new(Episode::PodcastId).integer().not_null())
                             .col(ColumnDef::new(Episode::Title).string())
-                            .col(ColumnDef::new(Episode::Link).string())
+                            .col(ColumnDef::new(Episode::Link).string().not_null().unique_key())
                             .col(ColumnDef::new(Episode::Description).string())
                             .col(ColumnDef::new(Episode::Guid).uuid())
                             .col(ColumnDef::new(Episode::PubDate).date_time())
