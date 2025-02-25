@@ -6,12 +6,13 @@ mod entity;
 mod podcasts_model;
 mod widgets;
 mod utils;
+mod traits;
 
 use std::str::FromStr;
 use data_provider::DataProvider;
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
-use entity::podcast;
+use entity::{episode, podcast};
 use log::error;
 use podcasts_model::PodcastsModel;
 use rss::Channel;
@@ -44,14 +45,16 @@ pub struct PlayerWrapper {
 pub enum AsyncAction {
     AddPodcast(String, String, String),
     GetPodcasts,
-    GetEpisodes(String),
+    GetEpisodes(String, i32),
+    SaveEpisodeState(f64, i32, String)
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AsyncActionResult {
     PodcastsUpdate(Option<Vec<podcast::Model>>),
-    EpisodesUpdate(Option<Vec<rss::Item>>),
+    EpisodesUpdate(Option<Vec<episode::Model>>),
     AddPodcastResult(Option<String>),
+    UniversalResult(Option<String>),
 }
 
 #[tokio::main]
@@ -103,17 +106,27 @@ async fn main() {
                         let _ = async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(None));
                     }
                 },
-                Some(AsyncAction::GetEpisodes(link)) => {
-                    let mut res = None;
+                Some(AsyncAction::GetEpisodes(link, podcast_id)) => {
                     if let Ok(episodes) = ureq::get(&link).call() {
                         if let Ok(episodes) = episodes.into_string() {
                             if let Ok(channel) = Channel::from_str(&episodes) {
-                                res = Some(channel.items().to_vec());
+                                if let Err(e) = data_provider.delete_episodes_by_podcast_id(podcast_id).await {
+                                    let _ = async_action_result_tx.send(AsyncActionResult::UniversalResult(Some(e.to_string())));
+                                }
+                                if let Err(e) = data_provider.add_episodes(channel.items().to_vec(), podcast_id).await {
+                                    let _ = async_action_result_tx.send(AsyncActionResult::UniversalResult(Some(e.to_string())));
+                                }
                             }
                         }
                     }
 
+                    let res = Some(data_provider.get_all_episodes(podcast_id).await.unwrap());
                     let _ = async_action_result_tx.send(AsyncActionResult::EpisodesUpdate(res));
+                }
+                Some(AsyncAction::SaveEpisodeState(progress, podcast_id, link)) => {
+                    if let Err(e) = data_provider.upsert_episode_state(progress, podcast_id, &link).await {
+                        let _ = async_action_result_tx.send(AsyncActionResult::UniversalResult(Some(e.to_string())));
+                    }
                 }
                 None => break,
             }
@@ -203,6 +216,12 @@ impl eframe::App for MyEguiApp {
                     self.show_error = true;
                 }
             }
+            Ok(AsyncActionResult::UniversalResult(res)) => {
+                if res.is_some() {
+                    self.error = res.unwrap();
+                    self.show_error = true;
+                }
+            }
             Err(_) => {}
         };
 
@@ -244,6 +263,7 @@ impl eframe::App for MyEguiApp {
                                                 let _ = self.async_action_tx.send(
                                                     AsyncAction::GetEpisodes(
                                                         p.link.clone().unwrap(),
+                                                        self.podcasts_model.current_podcast.id.unwrap()
                                                     ),
                                                 );
                                             }
@@ -274,6 +294,8 @@ impl eframe::App for MyEguiApp {
                         && ui.add(egui::Button::new("⏸")).clicked() {
                             self.player_wrapper.inner_player.pause();
                             self.player_wrapper.player_state = PlayerState::Paused;
+
+                            self.async_action_tx.send(AsyncAction::SaveEpisodeState(self.player_wrapper.inner_player.current_position(), self.podcasts_model.current_podcast.id.unwrap(), self.podcasts_model.current_episode.clone().unwrap().link.unwrap())).unwrap()
                     }
 
                     ui.add_space(5.0);
@@ -341,7 +363,7 @@ impl eframe::App for MyEguiApp {
                                             self.player_wrapper.player_state = PlayerState::Paused;
                                         }
                                     } else if ui.add(egui::Button::new("▶").min_size(eframe::egui::Vec2::new(15.0, 15.0))).clicked() {
-                                        self.player_wrapper.inner_player.open(&episodes[row_index].enclosure.clone().unwrap().url);
+                                        self.player_wrapper.inner_player.open(&episodes[row_index].link.clone().unwrap());
                                         self.player_wrapper.inner_player.play();
                                         self.player_wrapper.player_state = PlayerState::Playing;
                                         self.podcasts_model.current_episode = Some(episodes[row_index].clone());
