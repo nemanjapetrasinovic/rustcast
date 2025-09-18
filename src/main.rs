@@ -47,7 +47,8 @@ pub enum AsyncAction {
     GetPodcasts,
     GetEpisodes(String, i32),
     SaveEpisodeState(f64, i32, String),
-    LoadEpisodeState(String)
+    LoadEpisodeState(String),
+    GetAllEpisodeStates(i32)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -57,6 +58,7 @@ pub enum AsyncActionResult {
     AddPodcastResult(Option<String>),
     UniversalResult(Option<String>),
     EpisodeStateUpdate(f64),
+    AllEpisodeStatesUpdate(Option<std::collections::HashMap<String, f64>>),
 }
 
 #[tokio::main]
@@ -138,6 +140,16 @@ async fn main() {
                             } else {
                                 let _ = async_action_result_tx.send(AsyncActionResult::EpisodeStateUpdate(0.0));
                             }
+                        }
+                        Err(e) => {
+                            let _ = async_action_result_tx.send(AsyncActionResult::UniversalResult(Some(e.to_string())));
+                        }
+                    }
+                }
+                Some(AsyncAction::GetAllEpisodeStates(podcast_id)) => {
+                    match data_provider.get_all_episode_states(podcast_id).await {
+                        Ok(states) => {
+                            let _ = async_action_result_tx.send(AsyncActionResult::AllEpisodeStatesUpdate(Some(states)));
                         }
                         Err(e) => {
                             let _ = async_action_result_tx.send(AsyncActionResult::UniversalResult(Some(e.to_string())));
@@ -244,6 +256,11 @@ impl eframe::App for MyEguiApp {
                 self.player_wrapper.inner_player.play();
                 self.player_wrapper.player_state = PlayerState::Playing;
             }
+            Ok(AsyncActionResult::AllEpisodeStatesUpdate(states)) => {
+                if let Some(states) = states {
+                    self.podcasts_model.episode_states = states;
+                }
+            }
             Err(_) => {}
         };
 
@@ -285,6 +302,11 @@ impl eframe::App for MyEguiApp {
                                                 let _ = self.async_action_tx.send(
                                                     AsyncAction::GetEpisodes(
                                                         p.link.clone().unwrap(),
+                                                        self.podcasts_model.current_podcast.id.unwrap()
+                                                    ),
+                                                );
+                                                let _ = self.async_action_tx.send(
+                                                    AsyncAction::GetAllEpisodeStates(
                                                         self.podcasts_model.current_podcast.id.unwrap()
                                                     ),
                                                 );
@@ -359,6 +381,7 @@ impl eframe::App for MyEguiApp {
                         .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
                         .column(Column::auto())
                         .column(Column::auto())
+                        .column(Column::auto())
                         .column(Column::remainder())
                         .min_scrolled_height(0.0)
                         .max_scroll_height(ah);
@@ -370,6 +393,9 @@ impl eframe::App for MyEguiApp {
                             });
                             header.col(|ui| {
                                 ui.strong("Action");
+                            });
+                            header.col(|ui| {
+                                ui.strong("Paused at");
                             });
                             header.col(|ui| {
                                 ui.strong("Title");
@@ -408,6 +434,13 @@ impl eframe::App for MyEguiApp {
                                             .unwrap_or_else(|e| error!("{:?}", e.to_string()));
                                         self.podcasts_model.current_episode = Some(episodes[row_index].clone());
                                     }
+                                });
+                                row.col(|ui| {
+                                    let episode_link = &episodes[row_index].link.clone().unwrap();
+                                    let pause_time = self.podcasts_model.episode_states.get(episode_link)
+                                        .copied()
+                                        .unwrap_or(0.0);
+                                    ui.label(format_time(pause_time));
                                 });
                                 row.col(|ui| {
                                     ui.label(episodes[row_index].title.clone().unwrap());
@@ -492,5 +525,22 @@ impl eframe::App for MyEguiApp {
         }
 
         ctx.request_repaint();
+    }
+}
+
+fn format_time(seconds: f64) -> String {
+    if seconds <= 0.0 {
+        return "Not started".to_string();
+    }
+
+    let total_seconds = seconds as i64;
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let secs = total_seconds % 60;
+
+    if hours > 0 {
+        format!("{}:{:02}:{:02}", hours, minutes, secs)
+    } else {
+        format!("{}:{:02}", minutes, secs)
     }
 }

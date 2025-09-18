@@ -14,6 +14,7 @@ pub struct PodcastsModel {
     pub podcast_dialog: PodcastDialog,
     pub episodes: Option<Vec<episode::Model>>,
     pub current_episode: Option<episode::Model>,
+    pub episode_states: std::collections::HashMap<String, f64>,
 }
 
 #[derive(Default, PartialEq, Debug, Clone)]
@@ -31,6 +32,7 @@ impl PodcastsModel {
             podcast_dialog: Default::default(),
             episodes: Default::default(),
             current_episode: Default::default(),
+            episode_states: std::collections::HashMap::new(),
         }
     }
 }

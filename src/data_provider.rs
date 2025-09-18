@@ -99,4 +99,18 @@ impl DataProvider {
 
         Ok(res)
     }
+
+    pub async fn get_all_episode_states(&self, podcast_id: i32) -> Result<std::collections::HashMap<String, f64>, sea_orm::DbErr> {
+        let states: Vec<episode_state::Model> = episode_state::Entity::find()
+            .filter(episode_state::Column::PodcastId.eq(podcast_id))
+            .all(&self.db)
+            .await?;
+
+        let mut result = std::collections::HashMap::new();
+        for state in states {
+            result.insert(state.ep_link, state.time);
+        }
+
+        Ok(result)
+    }
 }
