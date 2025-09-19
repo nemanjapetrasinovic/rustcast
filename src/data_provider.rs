@@ -2,6 +2,7 @@ use sea_orm::*;
 use crate::entity::episode;
 use crate::entity::podcast;
 use crate::entity::episode_state;
+use crate::error::{RustcastError, RustcastResult};
 
 pub struct DataProvider {
     db: DatabaseConnection
@@ -42,12 +43,33 @@ impl DataProvider {
         Ok(episodes)
     }
 
-    pub async fn add_episodes(&self, episodes: Vec<rss::Item>, podcast_id: i32) -> Result<(), sea_orm::DbErr> {
-        let active_models: Vec<episode::ActiveModel> = episodes.into_iter().map(Into::into).map(|mut episode: episode::ActiveModel| {
-            episode.podcast_id = ActiveValue::Set(podcast_id);
-            episode
+    pub async fn add_episodes(&self, episodes: Vec<rss::Item>, podcast_id: i32) -> RustcastResult<()> {
+        let mut active_models = Vec::new();
+        let mut failed_count = 0;
+
+        for rss_item in episodes {
+            match episode::ActiveModel::try_from_rss_item(rss_item) {
+                Ok(mut episode_model) => {
+                    episode_model.podcast_id = ActiveValue::Set(podcast_id);
+                    active_models.push(episode_model);
+                }
+                Err(e) => {
+                    log::warn!("Failed to parse episode: {}", e);
+                    failed_count += 1;
+                }
             }
-        ).collect();
+        }
+
+        if active_models.is_empty() {
+            return Err(RustcastError::Rss(crate::error::RssError::ParseFailed(
+                "No valid episodes found in feed".to_string()
+            )));
+        }
+
+        if failed_count > 0 {
+            log::warn!("Failed to parse {} episodes out of {}", failed_count, active_models.len() + failed_count);
+        }
+
         episode::Entity::insert_many(active_models).exec(&self.db).await?;
         Ok(())
     }
