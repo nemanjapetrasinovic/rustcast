@@ -310,11 +310,21 @@ impl eframe::App for MyEguiApp {
             Ok(AsyncActionResult::EpisodeStateUpdate(res)) => {
                 if let Some(episode) = &self.podcasts_model.current_episode {
                     if let Some(link) = &episode.link {
+                        // Always open the episode to ensure it's properly loaded
                         self.player_wrapper.inner_player.open(link);
+
+                        // Seek to the saved position (or 0.0 if starting fresh)
                         self.player_wrapper.inner_player.seek(res);
                         self.player_wrapper.inner_player.play();
                         self.player_wrapper.player_state = PlayerState::Playing;
-                        info!("Started playing episode: {}", episode.title.as_deref().unwrap_or("Unknown"));
+
+                        if res > 0.0 {
+                            info!("Resumed episode '{}' from {:.1}s",
+                                episode.title.as_deref().unwrap_or("Unknown"), res);
+                        } else {
+                            info!("Started episode '{}' from beginning",
+                                episode.title.as_deref().unwrap_or("Unknown"));
+                        }
                     } else {
                         error!("Episode link is missing");
                         self.error = "Episode link is missing or invalid.".to_string();
@@ -525,37 +535,53 @@ impl eframe::App for MyEguiApp {
                                             }
                                         }
                                     } else if ui.add(egui::Button::new("▶").min_size(eframe::egui::Vec2::new(15.0, 15.0))).clicked() {
-                                        if self.podcasts_model.current_episode.is_some() {
-                                            if let (Some(podcast_id), Some(episode)) = (
-                                                self.podcasts_model.current_podcast.id,
-                                                &self.podcasts_model.current_episode
-                                            ) {
-                                                if let Some(episode_link) = &episode.link {
-                                                    let current_position = self.player_wrapper.inner_player.current_position();
+                                        let selected_episode = &episodes[row_index];
+                                        let is_same_episode = self.podcasts_model.current_episode.as_ref()
+                                            .map(|current| current.link == selected_episode.link)
+                                            .unwrap_or(false);
 
-                                                    // Update local state immediately for real-time display
-                                                    self.podcasts_model.episode_states.insert(episode_link.clone(), current_position);
+                                        if is_same_episode && self.player_wrapper.player_state == PlayerState::Paused {
+                                            // Same episode - just resume playback from current position
+                                            self.player_wrapper.inner_player.play();
+                                            self.player_wrapper.player_state = PlayerState::Playing;
+                                            info!("Resumed playback of: {}", selected_episode.title.as_deref().unwrap_or("Unknown"));
+                                        } else {
+                                            // Different episode or no current episode - save current state and load new episode
+                                            if self.podcasts_model.current_episode.is_some() {
+                                                if let (Some(podcast_id), Some(episode)) = (
+                                                    self.podcasts_model.current_podcast.id,
+                                                    &self.podcasts_model.current_episode
+                                                ) {
+                                                    if let Some(episode_link) = &episode.link {
+                                                        let current_position = self.player_wrapper.inner_player.current_position();
 
-                                                    // Send to async handler to save to database
-                                                    if let Err(e) = self.async_action_tx.send(AsyncAction::SaveEpisodeState(
-                                                        current_position,
-                                                        podcast_id,
-                                                        episode_link.clone()
-                                                    )) {
-                                                        error!("Failed to save episode state: {}", e);
+                                                        // Update local state immediately for real-time display
+                                                        self.podcasts_model.episode_states.insert(episode_link.clone(), current_position);
+
+                                                        // Send to async handler to save to database
+                                                        if let Err(e) = self.async_action_tx.send(AsyncAction::SaveEpisodeState(
+                                                            current_position,
+                                                            podcast_id,
+                                                            episode_link.clone()
+                                                        )) {
+                                                            error!("Failed to save episode state: {}", e);
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
 
-                                        if let Some(episode_link) = &episodes[row_index].link {
-                                            if let Err(e) = self.async_action_tx.send(AsyncAction::LoadEpisodeState(episode_link.clone())) {
-                                                error!("Failed to load episode state: {}", e);
+                                            // Set new current episode
+                                            self.podcasts_model.current_episode = Some(selected_episode.clone());
+
+                                            // Load the episode state and start playback
+                                            if let Some(episode_link) = &selected_episode.link {
+                                                if let Err(e) = self.async_action_tx.send(AsyncAction::LoadEpisodeState(episode_link.clone())) {
+                                                    error!("Failed to load episode state: {}", e);
+                                                }
+                                            } else {
+                                                error!("Episode link is missing for episode at index {}", row_index);
                                             }
-                                        } else {
-                                            error!("Episode link is missing for episode at index {}", row_index);
                                         }
-                                        self.podcasts_model.current_episode = Some(episodes[row_index].clone());
                                     }
                                 });
                                 row.col(|ui| {
