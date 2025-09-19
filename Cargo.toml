@@ -14,6 +14,7 @@ egui_extras = "0.27.2"
 env_logger = "0.11.3"
 log = "0.4.22"
 ureq = "2.9.7"
+url = "2.5.0"
 url2audio = "0.2.2"
 sea-orm = { version = "^0.12.0", features = [ "sqlx-sqlite", "runtime-async-std-native-tls", "macros" ] }
 rss = "2.0.8"
