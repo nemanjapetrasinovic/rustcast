@@ -221,6 +221,7 @@ struct MyEguiApp {
     podcasts_model: PodcastsModel,
     show_error: bool,
     error: String,
+    last_update_time: std::time::Instant,
 }
 
 impl MyEguiApp {
@@ -245,12 +246,48 @@ impl MyEguiApp {
             podcasts_model,
             show_error: false,
             error: String::new(),
+            last_update_time: std::time::Instant::now(),
         }
     }
 }
 
 impl eframe::App for MyEguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Periodic auto-save for playing episodes to preserve state
+        let now = std::time::Instant::now();
+        if self.player_wrapper.player_state == PlayerState::Playing {
+            // Auto-save episode state every 5 seconds while playing
+            if now.duration_since(self.last_update_time).as_secs() >= 5 {
+                if let (Some(podcast_id), Some(episode)) = (
+                    self.podcasts_model.current_podcast.id,
+                    &self.podcasts_model.current_episode
+                ) {
+                    if let Some(episode_link) = &episode.link {
+                        let current_position = self.player_wrapper.inner_player.current_position();
+
+                        // Update local state for immediate UI feedback
+                        self.podcasts_model.episode_states.insert(episode_link.clone(), current_position);
+
+                        // Auto-save to database in background
+                        if let Err(e) = self.async_action_tx.send(AsyncAction::SaveEpisodeState(
+                            current_position,
+                            podcast_id,
+                            episode_link.clone()
+                        )) {
+                            error!("Failed to auto-save episode state: {}", e);
+                        } else {
+                            info!("Auto-saved episode state: {:.1}s for '{}'",
+                                current_position,
+                                episode.title.as_deref().unwrap_or("Unknown")
+                            );
+                        }
+
+                        self.last_update_time = now;
+                    }
+                }
+            }
+        }
+
         match self.async_action_result_rx.try_recv() {
             Ok(AsyncActionResult::PodcastsUpdate(podcasts)) => {
                 self.podcasts_model.podcasts = podcasts;
@@ -377,8 +414,14 @@ impl eframe::App for MyEguiApp {
                                 &self.podcasts_model.current_episode
                             ) {
                                 if let Some(episode_link) = &episode.link {
+                                    let current_position = self.player_wrapper.inner_player.current_position();
+
+                                    // Update local state immediately for real-time display
+                                    self.podcasts_model.episode_states.insert(episode_link.clone(), current_position);
+
+                                    // Send to async handler to save to database
                                     if let Err(e) = self.async_action_tx.send(AsyncAction::SaveEpisodeState(
-                                        self.player_wrapper.inner_player.current_position(),
+                                        current_position,
                                         podcast_id,
                                         episode_link.clone()
                                     )) {
@@ -465,8 +508,14 @@ impl eframe::App for MyEguiApp {
                                                 &self.podcasts_model.current_episode
                                             ) {
                                                 if let Some(episode_link) = &episode.link {
+                                                    let current_position = self.player_wrapper.inner_player.current_position();
+
+                                                    // Update local state immediately for real-time display
+                                                    self.podcasts_model.episode_states.insert(episode_link.clone(), current_position);
+
+                                                    // Send to async handler to save to database
                                                     if let Err(e) = self.async_action_tx.send(AsyncAction::SaveEpisodeState(
-                                                        self.player_wrapper.inner_player.current_position(),
+                                                        current_position,
                                                         podcast_id,
                                                         episode_link.clone()
                                                     )) {
@@ -482,8 +531,14 @@ impl eframe::App for MyEguiApp {
                                                 &self.podcasts_model.current_episode
                                             ) {
                                                 if let Some(episode_link) = &episode.link {
+                                                    let current_position = self.player_wrapper.inner_player.current_position();
+
+                                                    // Update local state immediately for real-time display
+                                                    self.podcasts_model.episode_states.insert(episode_link.clone(), current_position);
+
+                                                    // Send to async handler to save to database
                                                     if let Err(e) = self.async_action_tx.send(AsyncAction::SaveEpisodeState(
-                                                        self.player_wrapper.inner_player.current_position(),
+                                                        current_position,
                                                         podcast_id,
                                                         episode_link.clone()
                                                     )) {
@@ -505,10 +560,37 @@ impl eframe::App for MyEguiApp {
                                 });
                                 row.col(|ui| {
                                     if let Some(episode_link) = &episodes[row_index].link {
-                                        let pause_time = self.podcasts_model.episode_states.get(episode_link)
-                                            .copied()
-                                            .unwrap_or(0.0);
-                                        ui.label(format_time(pause_time));
+                                        // Check if this is the currently playing episode
+                                        let is_current_episode = self.podcasts_model.current_episode
+                                            .as_ref()
+                                            .map(|ep| ep.link.as_ref() == Some(episode_link))
+                                            .unwrap_or(false);
+
+                                        if is_current_episode && self.player_wrapper.player_state == PlayerState::Playing {
+                                            // Show real-time position and status for playing episode
+                                            let current_time = self.player_wrapper.inner_player.current_position();
+                                            ui.colored_label(
+                                                egui::Color32::from_rgb(0, 155, 255),
+                                                format!("Playing: {}", format_time(current_time))
+                                            );
+                                        } else if is_current_episode && self.player_wrapper.player_state == PlayerState::Paused {
+                                            // Show real-time position for paused current episode
+                                            let current_time = self.player_wrapper.inner_player.current_position();
+                                            ui.colored_label(
+                                                egui::Color32::from_rgb(255, 165, 0),
+                                                format_time(current_time)
+                                            );
+                                        } else {
+                                            // Show saved state for other episodes
+                                            let pause_time = self.podcasts_model.episode_states.get(episode_link)
+                                                .copied()
+                                                .unwrap_or(0.0);
+                                            if pause_time > 0.0 {
+                                                ui.label(format_time(pause_time));
+                                            } else {
+                                                ui.label("Not started");
+                                            }
+                                        }
                                     } else {
                                         ui.label("No data");
                                     }
@@ -596,6 +678,35 @@ impl eframe::App for MyEguiApp {
         }
 
         ctx.request_repaint();
+    }
+
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // Save current episode state before closing
+        if self.player_wrapper.player_state == PlayerState::Playing ||
+           self.player_wrapper.player_state == PlayerState::Paused {
+            if let (Some(podcast_id), Some(episode)) = (
+                self.podcasts_model.current_podcast.id,
+                &self.podcasts_model.current_episode
+            ) {
+                if let Some(episode_link) = &episode.link {
+                    let current_position = self.player_wrapper.inner_player.current_position();
+
+                    // Final save before app closes
+                    if let Err(e) = self.async_action_tx.send(AsyncAction::SaveEpisodeState(
+                        current_position,
+                        podcast_id,
+                        episode_link.clone()
+                    )) {
+                        error!("Failed to save final episode state: {}", e);
+                    } else {
+                        info!("Final save on app close: {:.1}s for '{}'",
+                            current_position,
+                            episode.title.as_deref().unwrap_or("Unknown")
+                        );
+                    }
+                }
+            }
+        }
     }
 }
 
