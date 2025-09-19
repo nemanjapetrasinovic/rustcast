@@ -1,4 +1,4 @@
-use crate::entity::podcast;
+use crate::entity::{episode, podcast};
 
 #[derive(Default, PartialEq, Debug, Clone)]
 pub struct Podcast {
@@ -12,8 +12,9 @@ pub struct PodcastsModel {
     pub podcasts: Option<Vec<podcast::Model>>,
     pub current_podcast: Podcast,
     pub podcast_dialog: PodcastDialog,
-    pub episodes: Option<Vec<rss::Item>>,
-    pub current_episode: Option<rss::Item>,
+    pub episodes: Option<Vec<episode::Model>>,
+    pub current_episode: Option<episode::Model>,
+    pub episode_states: std::collections::HashMap<String, f64>,
 }
 
 #[derive(Default, PartialEq, Debug, Clone)]
@@ -31,6 +32,7 @@ impl PodcastsModel {
             podcast_dialog: Default::default(),
             episodes: Default::default(),
             current_episode: Default::default(),
+            episode_states: std::collections::HashMap::new(),
         }
     }
 }
