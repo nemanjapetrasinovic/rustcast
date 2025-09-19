@@ -3,4 +3,5 @@
 pub mod prelude;
 
 pub mod episode;
+pub mod episode_state;
 pub mod podcast;
