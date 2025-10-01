@@ -1,8 +1,18 @@
 GIT_VERSION:=$(shell git describe --abbrev=8 | sed 's/-/./')
-DB_PATH=${HOME}/.rustcast.db
-DATABASE_URL_BASE=sqlite://${DB_PATH}
-DATABASE_URL=sqlite://${HOME}/.rustcast.db?mode=rwc
 UNAME:=$(shell uname -s)
+
+ifeq ($(OS),Windows_NT)
+	DB_PATH=$(USERPROFILE)/.rustcast.db
+else ifeq ($(UNAME),Linux)
+	DB_PATH=$(HOME)/.rustcast.db
+else ifeq ($(UNAME),Darwin)
+	DB_PATH=$(HOME)/.rustcast.db
+else
+	DB_PATH=$(HOME)/.rustcast.db
+endif
+
+DATABASE_URL_BASE=sqlite://$(DB_PATH)
+DATABASE_URL=sqlite://$(DB_PATH)?mode=rwc
 
 build: Cargo.toml build-migration
 	git describe

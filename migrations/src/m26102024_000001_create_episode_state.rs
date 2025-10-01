@@ -2,7 +2,6 @@ use async_trait::async_trait;
 use sea_orm_migration::prelude::*;
 
 use crate::m22062024_000001_create_podcast_table::Podcast;
-use crate::m22062024_000001_create_episode_table::Episode;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;

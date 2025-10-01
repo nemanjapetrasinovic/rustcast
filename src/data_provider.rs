@@ -100,19 +100,6 @@ impl DataProvider {
         Ok(())
     }
 
-    pub async fn save_episode_state(&self, progress: f64, podcast_id: i32, link: &str) -> Result<(), sea_orm::DbErr> {
-        let episode_state_to_add = episode_state::ActiveModel {
-            time: ActiveValue::Set(progress),
-            finished: ActiveValue::Set(false),
-            podcast_id: ActiveValue::Set(podcast_id),
-            ep_link: ActiveValue::Set(link.to_string()),
-            ..Default::default()
-        };
-
-        episode_state_to_add.insert(&self.db).await?;
-        Ok(())
-    }
-
     pub async fn get_episode_state(&self, link: &str) -> Result<Option<episode_state::Model>, sea_orm::DbErr> {
         let res: Option<episode_state::Model> = episode_state::Entity::find()
             .filter(episode_state::Column::EpLink.eq(link))
