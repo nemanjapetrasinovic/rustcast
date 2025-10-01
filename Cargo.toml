@@ -17,7 +17,9 @@ ureq = "2.9.7"
 url = "2.5.0"
 url2audio = "0.2.2"
 sea-orm = { version = "^0.12.0", features = [ "sqlx-sqlite", "runtime-async-std-native-tls", "macros" ] }
+sea-orm-migration = { version = "^0.12.0", features = [ "sqlx-sqlite", "runtime-async-std-native-tls" ] }
 rss = "2.0.8"
+migrations = { path = "migrations" }
 
 [profile.dev]
 opt-level = 1

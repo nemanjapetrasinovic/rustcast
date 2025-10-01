@@ -9,6 +9,8 @@ mod widgets;
 mod utils;
 mod traits;
 
+use migrations;
+
 use data_provider::DataProvider;
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
@@ -17,6 +19,7 @@ use error::{RustcastError, RustcastResult};
 use log::{error, warn, info};
 use podcasts_model::PodcastsModel;
 use sea_orm::{Database, DatabaseConnection};
+use sea_orm_migration::prelude::*;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use url2audio::Player;
 use widgets::timeline::Timeline;
@@ -72,13 +75,21 @@ async fn main() {
         let home = std::env::var("HOME").unwrap();
         let connection = std::env::var("DATABASE_URL")
             .unwrap_or(format!("sqlite://{}/.rustcast.db?mode=rwc", home));
-        let db: DatabaseConnection = match Database::connect(connection).await {
+        let db: DatabaseConnection = match Database::connect(&connection).await {
             Ok(conn) => conn,
             Err(e) => {
                 error!("Failed to connect to database: {}", e);
                 panic!("Database connection failed - application cannot continue");
             }
         };
+
+        // Run migrations automatically
+        info!("Running database migrations...");
+        if let Err(e) = migrations::Migrator::up(&db, None).await {
+            error!("Failed to run migrations: {}", e);
+            panic!("Database migration failed - application cannot continue");
+        }
+        info!("Database migrations completed successfully");
 
         let data_provider = DataProvider::new(db);
         if let Err(e) = data_provider.get_podcasts().await {
