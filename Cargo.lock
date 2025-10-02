@@ -1573,6 +1573,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui-timeline-widget"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e0bbf65b4c29a738b7da375f186f8f36dc15283421deac54881a2f1bd526dba"
+dependencies = [
+ "egui 0.27.2",
+]
+
+[[package]]
 name = "egui-wgpu"
 version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3877,6 +3886,7 @@ version = "0.0.1"
 dependencies = [
  "eframe",
  "egui 0.28.1",
+ "egui-timeline-widget",
  "egui_extras",
  "env_logger",
  "log",

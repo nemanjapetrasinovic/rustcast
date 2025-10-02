@@ -20,6 +20,7 @@ sea-orm = { version = "^0.12.0", features = [ "sqlx-sqlite", "runtime-async-std-
 sea-orm-migration = { version = "^0.12.0", features = [ "sqlx-sqlite", "runtime-async-std-native-tls" ] }
 rss = "2.0.8"
 migrations = { path = "migrations" }
+egui-timeline-widget = "0.1.0"
 
 [profile.dev]
 opt-level = 1

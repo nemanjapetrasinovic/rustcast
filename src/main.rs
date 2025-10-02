@@ -5,7 +5,6 @@ mod data_provider;
 mod entity;
 mod error;
 mod podcasts_model;
-mod widgets;
 mod utils;
 mod traits;
 
@@ -22,7 +21,7 @@ use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::prelude::*;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use url2audio::Player;
-use widgets::timeline::Timeline;
+use egui_timeline_widget::Timeline;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PlayerAction {
@@ -458,7 +457,7 @@ impl eframe::App for MyEguiApp {
 
                     ui.add_space(5.0);
 
-                    let timeline_add = ui.add(&mut Timeline::new(
+                    let timeline_add = ui.add(Timeline::new(
                         self.player_wrapper.inner_player.current_position(),
                         self.player_wrapper.inner_player.duration(),
                         &mut self.player_wrapper.seek_position
