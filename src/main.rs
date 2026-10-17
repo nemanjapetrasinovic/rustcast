@@ -50,7 +50,8 @@ pub enum AsyncAction {
     GetEpisodes(String, i32),
     SaveEpisodeState(f64, i32, String),
     LoadEpisodeState(String),
-    GetAllEpisodeStates(i32)
+    GetAllEpisodeStates(i32),
+    SearchPodcasts(String),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -61,6 +62,7 @@ pub enum AsyncActionResult {
     UniversalResult(Option<String>),
     EpisodeStateUpdate(f64),
     AllEpisodeStatesUpdate(Option<std::collections::HashMap<String, f64>>),
+    SearchResults(Vec<podcasts_model::PodcastSearchResult>),
 }
 
 #[tokio::main]
@@ -183,6 +185,18 @@ async fn main() {
                         Err(e) => {
                             error!("Failed to load episode states for podcast {}: {}", podcast_id, e);
                             let _ = async_action_result_tx.send(AsyncActionResult::UniversalResult(Some(e.to_string())));
+                        }
+                    }
+                }
+                Some(AsyncAction::SearchPodcasts(query)) => {
+                    match utils::search_podcasts(&query) {
+                        Ok(results) => {
+                            info!("Found {} podcasts for query '{}'", results.len(), query);
+                            let _ = async_action_result_tx.send(AsyncActionResult::SearchResults(results));
+                        }
+                        Err(e) => {
+                            error!("Podcast search failed for '{}': {}", query, e);
+                            let _ = async_action_result_tx.send(AsyncActionResult::SearchResults(vec![]));
                         }
                     }
                 }
@@ -350,6 +364,10 @@ impl eframe::App for MyEguiApp {
                 if let Some(states) = states {
                     self.podcasts_model.episode_states = states;
                 }
+            }
+            Ok(AsyncActionResult::SearchResults(results)) => {
+                self.podcasts_model.podcast_dialog.search_results = results;
+                self.podcasts_model.podcast_dialog.is_searching = false;
             }
             Err(_) => {}
         };
@@ -644,52 +662,84 @@ impl eframe::App for MyEguiApp {
             egui::Window::new("Add podcast")
                 .collapsible(false)
                 .resizable(true)
+                .default_width(400.0)
                 .show(ctx, |ui| {
                     ui.with_layout(
                         egui::Layout::top_down_justified(egui::Align::Center),
                         |ui| {
-                            ui.add(
-                                egui::TextEdit::singleline(
-                                    &mut self.podcasts_model.podcast_dialog.link,
-                                )
-                                .hint_text("Podcast url"),
-                            );
-                            ui.add(
-                                egui::TextEdit::singleline(
-                                    &mut self.podcasts_model.podcast_dialog.title,
-                                )
-                                .hint_text("Podcast title"),
-                            );
-                            ui.add(
-                                egui::TextEdit::singleline(
-                                    &mut self.podcasts_model.podcast_dialog.description,
-                                )
-                                .hint_text("Podcast description"),
-                            );
+                            ui.horizontal(|ui| {
+                                let response = ui.add(
+                                    egui::TextEdit::singleline(
+                                        &mut self.podcasts_model.podcast_dialog.search_query,
+                                    )
+                                    .hint_text("Search podcasts..."),
+                                );
+                                let enter_pressed = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                let search_clicked = ui.add_enabled(
+                                    !self.podcasts_model.podcast_dialog.is_searching
+                                        && !self.podcasts_model.podcast_dialog.search_query.trim().is_empty(),
+                                    egui::Button::new("Search"),
+                                ).clicked();
+
+                                if (search_clicked || enter_pressed)
+                                    && !self.podcasts_model.podcast_dialog.search_query.trim().is_empty()
+                                    && !self.podcasts_model.podcast_dialog.is_searching
+                                {
+                                    self.podcasts_model.podcast_dialog.is_searching = true;
+                                    self.podcasts_model.podcast_dialog.search_results.clear();
+                                    let _ = self.async_action_tx.send(
+                                        AsyncAction::SearchPodcasts(
+                                            self.podcasts_model.podcast_dialog.search_query.clone()
+                                        )
+                                    );
+                                }
+                            });
+
+                            if self.podcasts_model.podcast_dialog.is_searching {
+                                ui.spinner();
+                                ui.label("Searching...");
+                            }
+
+                            if !self.podcasts_model.podcast_dialog.search_results.is_empty() {
+                                ui.separator();
+                                egui::ScrollArea::vertical()
+                                    .max_height(300.0)
+                                    .show(ui, |ui| {
+                                        let results = self.podcasts_model.podcast_dialog.search_results.clone();
+                                        for result in &results {
+                                            ui.group(|ui| {
+                                                ui.horizontal(|ui| {
+                                                    ui.vertical(|ui| {
+                                                        ui.strong(&result.title);
+                                                        ui.label(&result.artist);
+                                                    });
+                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                        if ui.button("Add").clicked() {
+                                                            self.async_action_tx
+                                                                .send(AsyncAction::AddPodcast(
+                                                                    result.title.clone(),
+                                                                    result.feed_url.clone(),
+                                                                    result.artist.clone(),
+                                                                ))
+                                                                .unwrap_or_else(|e| error!("{:?}", e.to_string()));
+
+                                                            self.async_action_tx
+                                                                .send(AsyncAction::GetPodcasts)
+                                                                .unwrap_or_else(|e| error!("{:?}", e.to_string()));
+
+                                                            self.podcasts_model.podcast_dialog = Default::default();
+                                                            self.show_add_podcast = false;
+                                                        }
+                                                    });
+                                                });
+                                            });
+                                        }
+                                    });
+                            }
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
                                 if ui.add(egui::Button::new("Close")).clicked() {
-                                    self.podcasts_model.podcast_dialog.link = String::new();
-                                    self.podcasts_model.podcast_dialog.title = String::new();
-                                    self.podcasts_model.podcast_dialog.description = String::new();
-                                    self.show_add_podcast = false;
-                                }
-                                if ui.add(egui::Button::new("Add")).clicked() {
-                                    self.async_action_tx
-                                        .send(AsyncAction::AddPodcast(
-                                            self.podcasts_model.podcast_dialog.title.clone(),
-                                            self.podcasts_model.podcast_dialog.link.clone(),
-                                            self.podcasts_model.podcast_dialog.description.clone(),
-                                        ))
-                                        .unwrap_or_else(|e| error!("{:?}", e.to_string()));
-
-                                    self.async_action_tx
-                                        .send(AsyncAction::GetPodcasts)
-                                        .unwrap_or_else(|e| error!("{:?}", e.to_string()));
-
-                                    self.podcasts_model.podcast_dialog.link = String::new();
-                                    self.podcasts_model.podcast_dialog.title = String::new();
-                                    self.podcasts_model.podcast_dialog.description = String::new();
+                                    self.podcasts_model.podcast_dialog = Default::default();
                                     self.show_add_podcast = false;
                                 }
                             });

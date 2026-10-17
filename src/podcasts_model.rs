@@ -18,10 +18,22 @@ pub struct PodcastsModel {
 }
 
 #[derive(Default, PartialEq, Debug, Clone)]
+pub struct PodcastSearchResult {
+    pub title: String,
+    pub feed_url: String,
+    pub artist: String,
+    pub artwork_url: String,
+}
+
+#[derive(Default, PartialEq, Debug, Clone)]
 pub struct PodcastDialog {
+    pub search_query: String,
+    pub search_results: Vec<PodcastSearchResult>,
+    pub is_searching: bool,
+    // Keep these for the selected podcast to add
     pub title: String,
     pub link: String,
-    pub description: String
+    pub description: String,
 }
 
 impl PodcastsModel {
@@ -42,7 +54,8 @@ impl From<podcast::Model> for PodcastDialog {
         PodcastDialog {
             link: p.link.unwrap(),
             title: p.title.unwrap(),
-            description: p.description.unwrap()
+            description: p.description.unwrap(),
+            ..Default::default()
         }
     }
 }
