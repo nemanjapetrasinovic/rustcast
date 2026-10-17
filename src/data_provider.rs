@@ -16,6 +16,15 @@ impl DataProvider {
     }
 
     pub async fn add_podcast(&self, title: String, link: String, description: String) -> Result<(), sea_orm::DbErr> {
+        let existing = podcast::Entity::find()
+            .filter(podcast::Column::Link.eq(&link))
+            .one(&self.db)
+            .await?;
+
+        if existing.is_some() {
+            return Err(sea_orm::DbErr::Custom("Podcast already exists".to_string()));
+        }
+
         let podcast_to_add = podcast::ActiveModel {
             title: ActiveValue::set(Some(title)),
             link: ActiveValue::set(Some(link)),
