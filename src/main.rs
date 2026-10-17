@@ -52,6 +52,7 @@ pub enum AsyncAction {
     LoadEpisodeState(String),
     GetAllEpisodeStates(i32),
     SearchPodcasts(String),
+    DeletePodcast(i32),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -197,6 +198,27 @@ async fn main() {
                         Err(e) => {
                             error!("Podcast search failed for '{}': {}", query, e);
                             let _ = async_action_result_tx.send(AsyncActionResult::SearchResults(vec![]));
+                        }
+                    }
+                }
+                Some(AsyncAction::DeletePodcast(podcast_id)) => {
+                    match data_provider.delete_podcast(podcast_id).await {
+                        Ok(_) => {
+                            info!("Deleted podcast {}", podcast_id);
+                            match data_provider.get_podcasts().await {
+                                Ok(res) => {
+                                    let _ = async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(Some(res)));
+                                }
+                                Err(_) => {
+                                    let _ = async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(None));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to delete podcast {}: {}", podcast_id, e);
+                            let _ = async_action_result_tx.send(AsyncActionResult::UniversalResult(
+                                Some(format!("Failed to delete podcast: {}", e))
+                            ));
                         }
                     }
                 }
@@ -396,9 +418,11 @@ impl eframe::App for MyEguiApp {
                             egui::Layout::top_down(egui::Align::LEFT).with_cross_justify(true),
                             |ui| {
                                 if let Some(podcasts) = &self.podcasts_model.podcasts {
-                                    for p in podcasts {
+                                    let podcasts_clone = podcasts.clone();
+                                    for p in &podcasts_clone {
                                         if let Some(title) = &p.title {
-                                            if ui.add(egui::Link::new(title)).clicked() {
+                                            let response = ui.add(egui::Link::new(title));
+                                            if response.clicked() {
                                                 if let (Some(link), Some(description)) = (&p.link, &p.description) {
                                                     self.podcasts_model.current_podcast = podcasts_model::Podcast {
                                                         id: Some(p.id),
@@ -419,6 +443,20 @@ impl eframe::App for MyEguiApp {
                                                     self.show_error = true;
                                                 }
                                             }
+                                            response.context_menu(|ui| {
+                                                if ui.button("Remove podcast").clicked() {
+                                                    let _ = self.async_action_tx.send(
+                                                        AsyncAction::DeletePodcast(p.id),
+                                                    );
+                                                    if self.podcasts_model.current_podcast.id == Some(p.id) {
+                                                        self.podcasts_model.current_podcast = Default::default();
+                                                        self.podcasts_model.episodes = None;
+                                                        self.podcasts_model.current_episode = None;
+                                                        self.podcasts_model.episode_states.clear();
+                                                    }
+                                                    ui.close_menu();
+                                                }
+                                            });
                                         }
                                     }
                                 } else {
