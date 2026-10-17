@@ -421,30 +421,32 @@ impl eframe::App for MyEguiApp {
                                     let podcasts_clone = podcasts.clone();
                                     for p in &podcasts_clone {
                                         if let Some(title) = &p.title {
-                                            let response = ui.add(egui::Link::new(title));
-                                            if response.clicked() {
-                                                if let (Some(link), Some(description)) = (&p.link, &p.description) {
-                                                    self.podcasts_model.current_podcast = podcasts_model::Podcast {
-                                                        id: Some(p.id),
-                                                        title: title.clone(),
-                                                        link: link.clone(),
-                                                        description: description.clone()
-                                                    };
+                                            ui.horizontal(|ui| {
+                                                if ui.add(egui::Link::new(title)).clicked() {
+                                                    if let (Some(link), Some(description)) = (&p.link, &p.description) {
+                                                        self.podcasts_model.current_podcast = podcasts_model::Podcast {
+                                                            id: Some(p.id),
+                                                            title: title.clone(),
+                                                            link: link.clone(),
+                                                            description: description.clone()
+                                                        };
 
-                                                    let _ = self.async_action_tx.send(
-                                                        AsyncAction::GetEpisodes(link.clone(), p.id),
-                                                    );
-                                                    let _ = self.async_action_tx.send(
-                                                        AsyncAction::GetAllEpisodeStates(p.id),
-                                                    );
-                                                } else {
-                                                    error!("Podcast data is incomplete: id={}, title={:?}, link={:?}", p.id, p.title, p.link);
-                                                    self.error = "This podcast has incomplete data and cannot be loaded.".to_string();
-                                                    self.show_error = true;
+                                                        let _ = self.async_action_tx.send(
+                                                            AsyncAction::GetEpisodes(link.clone(), p.id),
+                                                        );
+                                                        let _ = self.async_action_tx.send(
+                                                            AsyncAction::GetAllEpisodeStates(p.id),
+                                                        );
+                                                    } else {
+                                                        error!("Podcast data is incomplete: id={}, title={:?}, link={:?}", p.id, p.title, p.link);
+                                                        self.error = "This podcast has incomplete data and cannot be loaded.".to_string();
+                                                        self.show_error = true;
+                                                    }
                                                 }
-                                            }
-                                            response.context_menu(|ui| {
-                                                if ui.button("Remove podcast").clicked() {
+                                                if ui.add(egui::Button::new("x").small())
+                                                    .on_hover_text("Remove podcast")
+                                                    .clicked()
+                                                {
                                                     let _ = self.async_action_tx.send(
                                                         AsyncAction::DeletePodcast(p.id),
                                                     );
@@ -454,7 +456,6 @@ impl eframe::App for MyEguiApp {
                                                         self.podcasts_model.current_episode = None;
                                                         self.podcasts_model.episode_states.clear();
                                                     }
-                                                    ui.close_menu();
                                                 }
                                             });
                                         }
