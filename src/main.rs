@@ -73,9 +73,10 @@ async fn main() {
     let (async_action_result_tx, async_action_result_rx) = unbounded_channel::<AsyncActionResult>();
 
     let async_action_thread = tokio::spawn(async move {
-        let home = std::env::var("HOME").unwrap();
+        let home = dirs::home_dir().expect("Could not determine home directory");
+        let db_path = home.join(".rustcast.db");
         let connection = std::env::var("DATABASE_URL")
-            .unwrap_or(format!("sqlite://{}/.rustcast.db?mode=rwc", home));
+            .unwrap_or(format!("sqlite://{}?mode=rwc", db_path.display()));
         let db: DatabaseConnection = match Database::connect(&connection).await {
             Ok(conn) => conn,
             Err(e) => {
