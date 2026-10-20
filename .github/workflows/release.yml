@@ -20,11 +20,7 @@ jobs:
             target: aarch64-apple-darwin
             artifact: rustcast
             archive: rustcast-macos-aarch64.tar.gz
-          - os: macos-13
-            target: x86_64-apple-darwin
-            artifact: rustcast
-            archive: rustcast-macos-x86_64.tar.gz
-          - os: windows-latest
+- os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: rustcast.exe
             archive: rustcast-windows-x86_64.zip
