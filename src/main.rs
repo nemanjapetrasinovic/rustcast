@@ -12,7 +12,6 @@ use migrations;
 
 use data_provider::DataProvider;
 use eframe::egui;
-use egui_extras::{Column, TableBuilder};
 use entity::{episode, podcast};
 use error::{RustcastError, RustcastResult};
 use log::{error, warn, info};
@@ -50,7 +49,9 @@ pub enum AsyncAction {
     GetEpisodes(String, i32),
     SaveEpisodeState(f64, i32, String),
     LoadEpisodeState(String),
-    GetAllEpisodeStates(i32)
+    GetAllEpisodeStates(i32),
+    SearchPodcasts(String),
+    DeletePodcast(i32),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -61,6 +62,7 @@ pub enum AsyncActionResult {
     UniversalResult(Option<String>),
     EpisodeStateUpdate(f64),
     AllEpisodeStatesUpdate(Option<std::collections::HashMap<String, f64>>),
+    SearchResults(Vec<podcasts_model::PodcastSearchResult>),
 }
 
 #[tokio::main]
@@ -183,6 +185,39 @@ async fn main() {
                         Err(e) => {
                             error!("Failed to load episode states for podcast {}: {}", podcast_id, e);
                             let _ = async_action_result_tx.send(AsyncActionResult::UniversalResult(Some(e.to_string())));
+                        }
+                    }
+                }
+                Some(AsyncAction::SearchPodcasts(query)) => {
+                    match utils::search_podcasts(&query) {
+                        Ok(results) => {
+                            info!("Found {} podcasts for query '{}'", results.len(), query);
+                            let _ = async_action_result_tx.send(AsyncActionResult::SearchResults(results));
+                        }
+                        Err(e) => {
+                            error!("Podcast search failed for '{}': {}", query, e);
+                            let _ = async_action_result_tx.send(AsyncActionResult::SearchResults(vec![]));
+                        }
+                    }
+                }
+                Some(AsyncAction::DeletePodcast(podcast_id)) => {
+                    match data_provider.delete_podcast(podcast_id).await {
+                        Ok(_) => {
+                            info!("Deleted podcast {}", podcast_id);
+                            match data_provider.get_podcasts().await {
+                                Ok(res) => {
+                                    let _ = async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(Some(res)));
+                                }
+                                Err(_) => {
+                                    let _ = async_action_result_tx.send(AsyncActionResult::PodcastsUpdate(None));
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to delete podcast {}: {}", podcast_id, e);
+                            let _ = async_action_result_tx.send(AsyncActionResult::UniversalResult(
+                                Some(format!("Failed to delete podcast: {}", e))
+                            ));
                         }
                     }
                 }
@@ -351,6 +386,10 @@ impl eframe::App for MyEguiApp {
                     self.podcasts_model.episode_states = states;
                 }
             }
+            Ok(AsyncActionResult::SearchResults(results)) => {
+                self.podcasts_model.podcast_dialog.search_results = results;
+                self.podcasts_model.podcast_dialog.is_searching = false;
+            }
             Err(_) => {}
         };
 
@@ -378,29 +417,46 @@ impl eframe::App for MyEguiApp {
                             egui::Layout::top_down(egui::Align::LEFT).with_cross_justify(true),
                             |ui| {
                                 if let Some(podcasts) = &self.podcasts_model.podcasts {
-                                    for p in podcasts {
+                                    let podcasts_clone = podcasts.clone();
+                                    for p in &podcasts_clone {
                                         if let Some(title) = &p.title {
-                                            if ui.add(egui::Link::new(title)).clicked() {
-                                                if let (Some(link), Some(description)) = (&p.link, &p.description) {
-                                                    self.podcasts_model.current_podcast = podcasts_model::Podcast {
-                                                        id: Some(p.id),
-                                                        title: title.clone(),
-                                                        link: link.clone(),
-                                                        description: description.clone()
-                                                    };
+                                            ui.horizontal(|ui| {
+                                                if ui.add(egui::Link::new(title)).clicked() {
+                                                    if let (Some(link), Some(description)) = (&p.link, &p.description) {
+                                                        self.podcasts_model.current_podcast = podcasts_model::Podcast {
+                                                            id: Some(p.id),
+                                                            title: title.clone(),
+                                                            link: link.clone(),
+                                                            description: description.clone()
+                                                        };
 
-                                                    let _ = self.async_action_tx.send(
-                                                        AsyncAction::GetEpisodes(link.clone(), p.id),
-                                                    );
-                                                    let _ = self.async_action_tx.send(
-                                                        AsyncAction::GetAllEpisodeStates(p.id),
-                                                    );
-                                                } else {
-                                                    error!("Podcast data is incomplete: id={}, title={:?}, link={:?}", p.id, p.title, p.link);
-                                                    self.error = "This podcast has incomplete data and cannot be loaded.".to_string();
-                                                    self.show_error = true;
+                                                        let _ = self.async_action_tx.send(
+                                                            AsyncAction::GetEpisodes(link.clone(), p.id),
+                                                        );
+                                                        let _ = self.async_action_tx.send(
+                                                            AsyncAction::GetAllEpisodeStates(p.id),
+                                                        );
+                                                    } else {
+                                                        error!("Podcast data is incomplete: id={}, title={:?}, link={:?}", p.id, p.title, p.link);
+                                                        self.error = "This podcast has incomplete data and cannot be loaded.".to_string();
+                                                        self.show_error = true;
+                                                    }
                                                 }
-                                            }
+                                                if ui.add(egui::Button::new("x").small())
+                                                    .on_hover_text("Remove podcast")
+                                                    .clicked()
+                                                {
+                                                    let _ = self.async_action_tx.send(
+                                                        AsyncAction::DeletePodcast(p.id),
+                                                    );
+                                                    if self.podcasts_model.current_podcast.id == Some(p.id) {
+                                                        self.podcasts_model.current_podcast = Default::default();
+                                                        self.podcasts_model.episodes = None;
+                                                        self.podcasts_model.current_episode = None;
+                                                        self.podcasts_model.episode_states.clear();
+                                                    }
+                                                }
+                                            });
                                         }
                                     }
                                 } else {
@@ -418,14 +474,14 @@ impl eframe::App for MyEguiApp {
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                     ui.add_space(10.0);
 
-                    if self.player_wrapper.player_state == PlayerState::Paused && ui.add(egui::Button::new("▶")).clicked() {
+                    if self.player_wrapper.player_state == PlayerState::Paused && ui.add(egui::Button::new("▶ Play")).clicked() {
                             self.player_wrapper.inner_player.play();
                             self.player_wrapper.player_state = PlayerState::Playing;
                         }
 
                     if (self.player_wrapper.player_state == PlayerState::Playing
                         || self.player_state == PlayerState::Open)
-                        && ui.add(egui::Button::new("⏸")).clicked() {
+                        && ui.add(egui::Button::new("⏸ Pause")).clicked() {
                             self.player_wrapper.inner_player.pause();
                             self.player_wrapper.player_state = PlayerState::Paused;
 
@@ -477,165 +533,110 @@ impl eframe::App for MyEguiApp {
                 ui.heading("Episodes");
             });
             if let Some(episodes) = &self.podcasts_model.episodes {
-                egui::ScrollArea::horizontal().show(ui, |ui| {
-                    let text_height = egui::TextStyle::Body
-                        .resolve(ui.style())
-                        .size
-                        .max(ui.spacing().interact_size.y);
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    let episodes_clone = episodes.clone();
+                    for (index, ep) in episodes_clone.iter().enumerate() {
+                        let is_current = self.podcasts_model.current_episode.as_ref()
+                            .map(|current| current.link == ep.link)
+                            .unwrap_or(false);
 
-                    let ah = ui.available_height();
-                    let table = TableBuilder::new(ui)
-                        .striped(true)
-                        .resizable(false)
-                        .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-                        .column(Column::auto())
-                        .column(Column::auto())
-                        .column(Column::auto())
-                        .column(Column::remainder())
-                        .min_scrolled_height(0.0)
-                        .max_scroll_height(ah);
+                        let title = ep.title.as_deref().unwrap_or("Unknown Episode");
 
-                    table
-                        .header(20.0, |mut header| {
-                            header.col(|ui| {
-                                ui.strong("Ep");
+                        let (status, status_color) = if let Some(episode_link) = &ep.link {
+                            if is_current && self.player_wrapper.player_state == PlayerState::Playing {
+                                let t = self.player_wrapper.inner_player.current_position();
+                                (format!("Playing {}", format_time(t)), egui::Color32::from_rgb(0, 155, 255))
+                            } else if is_current && self.player_wrapper.player_state == PlayerState::Paused {
+                                let t = self.player_wrapper.inner_player.current_position();
+                                (format!("Paused {}", format_time(t)), egui::Color32::from_rgb(255, 165, 0))
+                            } else {
+                                let pause_time = self.podcasts_model.episode_states.get(episode_link)
+                                    .copied()
+                                    .unwrap_or(0.0);
+                                if pause_time > 0.0 {
+                                    (format_time(pause_time), egui::Color32::GRAY)
+                                } else {
+                                    ("Not started".to_string(), egui::Color32::GRAY)
+                                }
+                            }
+                        } else {
+                            (String::new(), egui::Color32::GRAY)
+                        };
+
+                        let fill = if is_current {
+                            ui.visuals().widgets.inactive.bg_fill
+                        } else {
+                            egui::Color32::TRANSPARENT
+                        };
+
+                        let frame = egui::Frame::group(ui.style())
+                            .fill(fill);
+
+                        let response = frame.show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    egui::RichText::new(format!("{}. {}", index + 1, title))
+                                        .strong()
+                                );
+                                ui.label(
+                                    egui::RichText::new(&status)
+                                        .size(12.0)
+                                        .color(status_color)
+                                );
                             });
-                            header.col(|ui| {
-                                ui.strong("Action");
-                            });
-                            header.col(|ui| {
-                                ui.strong("Paused at");
-                            });
-                            header.col(|ui| {
-                                ui.strong("Title");
-                            });
-                        })
-                        .body(|body| {
-                            body.rows(text_height + 5.0, episodes.len(), |mut row| {
-                                let row_index = row.index();
-                                row.col(|ui| {
-                                    ui.label(row_index.to_string());
-                                });
-                                row.col(|ui| {
-                                    if self.podcasts_model.current_episode == Some(episodes[row_index].clone())
-                                        && self.player_wrapper.player_state == PlayerState::Playing {
-                                        if ui.add(egui::Button::new("⏸").min_size(eframe::egui::Vec2::new(15.0, 15.0)).fill(eframe::egui::Color32::from_rgb(0, 155, 255))).clicked() {
-                                            self.player_wrapper.inner_player.pause();
-                                            self.player_wrapper.player_state = PlayerState::Paused;
+                        }).response;
 
-                                            if let (Some(podcast_id), Some(episode)) = (
-                                                self.podcasts_model.current_podcast.id,
-                                                &self.podcasts_model.current_episode
-                                            ) {
-                                                if let Some(episode_link) = &episode.link {
-                                                    let current_position = self.player_wrapper.inner_player.current_position();
+                        let response = response.interact(egui::Sense::click());
+                        if response.clicked() {
+                            if is_current {
+                                if self.player_wrapper.player_state == PlayerState::Playing {
+                                    self.player_wrapper.inner_player.pause();
+                                    self.player_wrapper.player_state = PlayerState::Paused;
 
-                                                    // Update local state immediately for real-time display
-                                                    self.podcasts_model.episode_states.insert(episode_link.clone(), current_position);
-
-                                                    // Send to async handler to save to database
-                                                    if let Err(e) = self.async_action_tx.send(AsyncAction::SaveEpisodeState(
-                                                        current_position,
-                                                        podcast_id,
-                                                        episode_link.clone()
-                                                    )) {
-                                                        error!("Failed to save episode state: {}", e);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } else if ui.add(egui::Button::new("▶").min_size(eframe::egui::Vec2::new(15.0, 15.0))).clicked() {
-                                        let selected_episode = &episodes[row_index];
-                                        let is_same_episode = self.podcasts_model.current_episode.as_ref()
-                                            .map(|current| current.link == selected_episode.link)
-                                            .unwrap_or(false);
-
-                                        if is_same_episode && self.player_wrapper.player_state == PlayerState::Paused {
-                                            // Same episode - just resume playback from current position
-                                            self.player_wrapper.inner_player.play();
-                                            self.player_wrapper.player_state = PlayerState::Playing;
-                                            info!("Resumed playback of: {}", selected_episode.title.as_deref().unwrap_or("Unknown"));
-                                        } else {
-                                            // Different episode or no current episode - save current state and load new episode
-                                            if self.podcasts_model.current_episode.is_some() {
-                                                if let (Some(podcast_id), Some(episode)) = (
-                                                    self.podcasts_model.current_podcast.id,
-                                                    &self.podcasts_model.current_episode
-                                                ) {
-                                                    if let Some(episode_link) = &episode.link {
-                                                        let current_position = self.player_wrapper.inner_player.current_position();
-
-                                                        // Update local state immediately for real-time display
-                                                        self.podcasts_model.episode_states.insert(episode_link.clone(), current_position);
-
-                                                        // Send to async handler to save to database
-                                                        if let Err(e) = self.async_action_tx.send(AsyncAction::SaveEpisodeState(
-                                                            current_position,
-                                                            podcast_id,
-                                                            episode_link.clone()
-                                                        )) {
-                                                            error!("Failed to save episode state: {}", e);
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            // Set new current episode
-                                            self.podcasts_model.current_episode = Some(selected_episode.clone());
-
-                                            // Load the episode state and start playback
-                                            if let Some(episode_link) = &selected_episode.link {
-                                                if let Err(e) = self.async_action_tx.send(AsyncAction::LoadEpisodeState(episode_link.clone())) {
-                                                    error!("Failed to load episode state: {}", e);
-                                                }
-                                            } else {
-                                                error!("Episode link is missing for episode at index {}", row_index);
-                                            }
+                                    if let (Some(podcast_id), Some(episode)) = (
+                                        self.podcasts_model.current_podcast.id,
+                                        &self.podcasts_model.current_episode
+                                    ) {
+                                        if let Some(episode_link) = &episode.link {
+                                            let current_position = self.player_wrapper.inner_player.current_position();
+                                            self.podcasts_model.episode_states.insert(episode_link.clone(), current_position);
+                                            let _ = self.async_action_tx.send(AsyncAction::SaveEpisodeState(
+                                                current_position,
+                                                podcast_id,
+                                                episode_link.clone()
+                                            ));
                                         }
                                     }
-                                });
-                                row.col(|ui| {
-                                    if let Some(episode_link) = &episodes[row_index].link {
-                                        // Check if this is the currently playing episode
-                                        let is_current_episode = self.podcasts_model.current_episode
-                                            .as_ref()
-                                            .map(|ep| ep.link.as_ref() == Some(episode_link))
-                                            .unwrap_or(false);
-
-                                        if is_current_episode && self.player_wrapper.player_state == PlayerState::Playing {
-                                            // Show real-time position and status for playing episode
-                                            let current_time = self.player_wrapper.inner_player.current_position();
-                                            ui.colored_label(
-                                                egui::Color32::from_rgb(0, 155, 255),
-                                                format!("Playing: {}", format_time(current_time))
-                                            );
-                                        } else if is_current_episode && self.player_wrapper.player_state == PlayerState::Paused {
-                                            // Show real-time position for paused current episode
-                                            let current_time = self.player_wrapper.inner_player.current_position();
-                                            ui.colored_label(
-                                                egui::Color32::from_rgb(255, 165, 0),
-                                                format_time(current_time)
-                                            );
-                                        } else {
-                                            // Show saved state for other episodes
-                                            let pause_time = self.podcasts_model.episode_states.get(episode_link)
-                                                .copied()
-                                                .unwrap_or(0.0);
-                                            if pause_time > 0.0 {
-                                                ui.label(format_time(pause_time));
-                                            } else {
-                                                ui.label("Not started");
-                                            }
-                                        }
-                                    } else {
-                                        ui.label("No data");
+                                } else {
+                                    self.player_wrapper.inner_player.play();
+                                    self.player_wrapper.player_state = PlayerState::Playing;
+                                }
+                            } else {
+                                // Save state of currently playing episode
+                                if let (Some(podcast_id), Some(episode)) = (
+                                    self.podcasts_model.current_podcast.id,
+                                    &self.podcasts_model.current_episode
+                                ) {
+                                    if let Some(episode_link) = &episode.link {
+                                        let current_position = self.player_wrapper.inner_player.current_position();
+                                        self.podcasts_model.episode_states.insert(episode_link.clone(), current_position);
+                                        let _ = self.async_action_tx.send(AsyncAction::SaveEpisodeState(
+                                            current_position,
+                                            podcast_id,
+                                            episode_link.clone()
+                                        ));
                                     }
-                                });
-                                row.col(|ui| {
-                                    ui.label(episodes[row_index].title.as_deref().unwrap_or("Unknown Episode"));
-                                });
-                            });
-                        });
+                                }
+
+                                // Play new episode
+                                self.podcasts_model.current_episode = Some(ep.clone());
+                                if let Some(episode_link) = &ep.link {
+                                    let _ = self.async_action_tx.send(AsyncAction::LoadEpisodeState(episode_link.clone()));
+                                }
+                            }
+                        }
+                    }
                 });
             }
         });
@@ -644,52 +645,84 @@ impl eframe::App for MyEguiApp {
             egui::Window::new("Add podcast")
                 .collapsible(false)
                 .resizable(true)
+                .default_width(400.0)
                 .show(ctx, |ui| {
                     ui.with_layout(
                         egui::Layout::top_down_justified(egui::Align::Center),
                         |ui| {
-                            ui.add(
-                                egui::TextEdit::singleline(
-                                    &mut self.podcasts_model.podcast_dialog.link,
-                                )
-                                .hint_text("Podcast url"),
-                            );
-                            ui.add(
-                                egui::TextEdit::singleline(
-                                    &mut self.podcasts_model.podcast_dialog.title,
-                                )
-                                .hint_text("Podcast title"),
-                            );
-                            ui.add(
-                                egui::TextEdit::singleline(
-                                    &mut self.podcasts_model.podcast_dialog.description,
-                                )
-                                .hint_text("Podcast description"),
-                            );
+                            ui.horizontal(|ui| {
+                                let response = ui.add(
+                                    egui::TextEdit::singleline(
+                                        &mut self.podcasts_model.podcast_dialog.search_query,
+                                    )
+                                    .hint_text("Search podcasts..."),
+                                );
+                                let enter_pressed = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                                let search_clicked = ui.add_enabled(
+                                    !self.podcasts_model.podcast_dialog.is_searching
+                                        && !self.podcasts_model.podcast_dialog.search_query.trim().is_empty(),
+                                    egui::Button::new("Search"),
+                                ).clicked();
+
+                                if (search_clicked || enter_pressed)
+                                    && !self.podcasts_model.podcast_dialog.search_query.trim().is_empty()
+                                    && !self.podcasts_model.podcast_dialog.is_searching
+                                {
+                                    self.podcasts_model.podcast_dialog.is_searching = true;
+                                    self.podcasts_model.podcast_dialog.search_results.clear();
+                                    let _ = self.async_action_tx.send(
+                                        AsyncAction::SearchPodcasts(
+                                            self.podcasts_model.podcast_dialog.search_query.clone()
+                                        )
+                                    );
+                                }
+                            });
+
+                            if self.podcasts_model.podcast_dialog.is_searching {
+                                ui.spinner();
+                                ui.label("Searching...");
+                            }
+
+                            if !self.podcasts_model.podcast_dialog.search_results.is_empty() {
+                                ui.separator();
+                                egui::ScrollArea::vertical()
+                                    .max_height(300.0)
+                                    .show(ui, |ui| {
+                                        let results = self.podcasts_model.podcast_dialog.search_results.clone();
+                                        for result in &results {
+                                            ui.group(|ui| {
+                                                ui.horizontal(|ui| {
+                                                    ui.vertical(|ui| {
+                                                        ui.strong(&result.title);
+                                                        ui.label(&result.artist);
+                                                    });
+                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                        if ui.button("Add").clicked() {
+                                                            self.async_action_tx
+                                                                .send(AsyncAction::AddPodcast(
+                                                                    result.title.clone(),
+                                                                    result.feed_url.clone(),
+                                                                    result.artist.clone(),
+                                                                ))
+                                                                .unwrap_or_else(|e| error!("{:?}", e.to_string()));
+
+                                                            self.async_action_tx
+                                                                .send(AsyncAction::GetPodcasts)
+                                                                .unwrap_or_else(|e| error!("{:?}", e.to_string()));
+
+                                                            self.podcasts_model.podcast_dialog = Default::default();
+                                                            self.show_add_podcast = false;
+                                                        }
+                                                    });
+                                                });
+                                            });
+                                        }
+                                    });
+                            }
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
                                 if ui.add(egui::Button::new("Close")).clicked() {
-                                    self.podcasts_model.podcast_dialog.link = String::new();
-                                    self.podcasts_model.podcast_dialog.title = String::new();
-                                    self.podcasts_model.podcast_dialog.description = String::new();
-                                    self.show_add_podcast = false;
-                                }
-                                if ui.add(egui::Button::new("Add")).clicked() {
-                                    self.async_action_tx
-                                        .send(AsyncAction::AddPodcast(
-                                            self.podcasts_model.podcast_dialog.title.clone(),
-                                            self.podcasts_model.podcast_dialog.link.clone(),
-                                            self.podcasts_model.podcast_dialog.description.clone(),
-                                        ))
-                                        .unwrap_or_else(|e| error!("{:?}", e.to_string()));
-
-                                    self.async_action_tx
-                                        .send(AsyncAction::GetPodcasts)
-                                        .unwrap_or_else(|e| error!("{:?}", e.to_string()));
-
-                                    self.podcasts_model.podcast_dialog.link = String::new();
-                                    self.podcasts_model.podcast_dialog.title = String::new();
-                                    self.podcasts_model.podcast_dialog.description = String::new();
+                                    self.podcasts_model.podcast_dialog = Default::default();
                                     self.show_add_podcast = false;
                                 }
                             });
