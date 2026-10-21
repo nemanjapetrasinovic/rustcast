@@ -3,9 +3,6 @@ name = "rustcast"
 version = "0.0.2"
 edition = "2021"
 
-[workspace]
-members = [".", "migrations"]
-
 [dependencies]
 tokio = { version = "1.39.0", features = ["full"] }
 egui = "0.30.0"
@@ -19,7 +16,6 @@ url2audio = "0.2.2"
 sea-orm = { version = "^0.12.0", features = [ "sqlx-sqlite", "runtime-async-std-native-tls", "macros" ] }
 sea-orm-migration = { version = "^0.12.0", features = [ "sqlx-sqlite", "runtime-async-std-native-tls" ] }
 rss = "2.0.8"
-migrations = { path = "migrations" }
 egui-timeline-widget = "0.2.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

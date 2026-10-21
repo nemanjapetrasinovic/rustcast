@@ -6,9 +6,8 @@ mod entity;
 mod error;
 mod podcasts_model;
 mod utils;
+mod migrations;
 mod traits;
-
-use migrations;
 
 use data_provider::DataProvider;
 use eframe::egui;
