@@ -1,6 +1,6 @@
 [package]
 name = "rustcast-player"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 description = "A podcast player built with egui"
 license = "GPL-3.0"
