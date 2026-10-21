@@ -243,14 +243,14 @@ async fn main() {
         "Rustcast",
         native_options,
         Box::new(move |cc| {
-            Box::new(MyEguiApp::new(
+            Ok(Box::new(MyEguiApp::new(
                 cc,
                 player_wrapper,
                 async_action_tx,
                 async_action_result_rx,
                 PlayerState::Open,
                 PodcastsModel::new(),
-            ))
+            )))
         }),
     )
     .unwrap_or_else(|e| error!("An error occured {}", e));
