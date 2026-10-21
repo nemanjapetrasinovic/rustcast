@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Rustcast
+Comment=Podcast player
+Exec=rustcast
+Icon=rustcast
+Type=Application
+Categories=Audio;Player;
