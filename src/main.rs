@@ -234,8 +234,14 @@ async fn main() {
         seek_position: 0.0
     };
 
+    let icon_data = eframe::icon_data::from_png_bytes(
+        include_bytes!("../assets/mic/rustcast-mic-256.png")
+    ).expect("Failed to load app icon");
+
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 400.0]),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([600.0, 400.0])
+            .with_icon(icon_data),
         ..Default::default()
     };
 
