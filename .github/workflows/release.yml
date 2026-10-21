@@ -52,11 +52,49 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Package (Unix)
-        if: runner.os != 'Windows'
+      - name: Package (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../${{ matrix.archive }} ${{ matrix.artifact }}
+          mkdir -p rustcast-linux
+          cp target/${{ matrix.target }}/release/${{ matrix.artifact }} rustcast-linux/
+          cp assets/mic/rustcast-mic-256.png rustcast-linux/rustcast.png
+          cp assets/rustcast.desktop rustcast-linux/
+          tar czf ${{ matrix.archive }} -C rustcast-linux .
+
+      - name: Package (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p Rustcast.app/Contents/MacOS
+          mkdir -p Rustcast.app/Contents/Resources
+          cp target/${{ matrix.target }}/release/${{ matrix.artifact }} Rustcast.app/Contents/MacOS/
+          cp assets/mic/rustcast-mic.icns Rustcast.app/Contents/Resources/rustcast.icns
+          cat > Rustcast.app/Contents/Info.plist << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>
+            <string>Rustcast</string>
+            <key>CFBundleDisplayName</key>
+            <string>Rustcast</string>
+            <key>CFBundleExecutable</key>
+            <string>rustcast</string>
+            <key>CFBundleIconFile</key>
+            <string>rustcast</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.rustcast.app</string>
+            <key>CFBundleVersion</key>
+            <string>0.0.1</string>
+            <key>CFBundleShortVersionString</key>
+            <string>0.0.1</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+          tar czf ${{ matrix.archive }} Rustcast.app
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
