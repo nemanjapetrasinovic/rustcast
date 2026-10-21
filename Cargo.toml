@@ -2,6 +2,10 @@
 name = "rustcast"
 version = "0.0.2"
 edition = "2021"
+description = "A podcast player built with egui"
+license = "GPL-3.0"
+repository = "https://github.com/nemanjapetrasinovic/rustcast"
+homepage = "https://github.com/nemanjapetrasinovic/rustcast"
 
 [dependencies]
 tokio = { version = "1.39.0", features = ["full"] }
