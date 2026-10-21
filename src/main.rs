@@ -234,8 +234,14 @@ async fn main() {
         seek_position: 0.0
     };
 
+    let icon_data = eframe::icon_data::from_png_bytes(
+        include_bytes!("../assets/mic/rustcast-mic-256.png")
+    ).expect("Failed to load app icon");
+
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([600.0, 400.0]),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([600.0, 400.0])
+            .with_icon(icon_data),
         ..Default::default()
     };
 
@@ -243,14 +249,14 @@ async fn main() {
         "Rustcast",
         native_options,
         Box::new(move |cc| {
-            Box::new(MyEguiApp::new(
+            Ok(Box::new(MyEguiApp::new(
                 cc,
                 player_wrapper,
                 async_action_tx,
                 async_action_result_rx,
                 PlayerState::Open,
                 PodcastsModel::new(),
-            ))
+            )))
         }),
     )
     .unwrap_or_else(|e| error!("An error occured {}", e));
