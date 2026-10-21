@@ -1,5 +1,5 @@
 [package]
-name = "rustcast"
+name = "rustcast-player"
 version = "0.0.2"
 edition = "2021"
 description = "A podcast player built with egui"
